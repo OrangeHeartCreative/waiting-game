@@ -2,6 +2,8 @@
 
 Phaser + Vite + JavaScript foundation only. Gameplay mechanics are intentionally out of scope for this week.
 
+Note: This checklist is archived for Week 1 completion tracking. The current repository state has progressed beyond Week 1 and now includes playable delivery flow and rival AI behavior systems.
+
 **Scope**
 - [x] Include setup, scene architecture, placeholder visuals/UI, preload conventions, lint/test/build, and docs.
 - [x] Exclude mechanics, balancing, AI, and deployment hosting.

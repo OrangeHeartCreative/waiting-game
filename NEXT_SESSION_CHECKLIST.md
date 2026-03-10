@@ -2,24 +2,31 @@
 
 Focused one-session plan based on the current README next milestone priorities.
 
+**Today Kickoff (2026-03-10)**
+- [x] Baseline quality check passed: `npm run lint`.
+- [x] Baseline quality check passed: `npm run test`.
+- [x] Baseline quality check passed: `npm run build`.
+- [x] Dev server starts cleanly (`vite` on `http://localhost:5174/`; `5173` was already in use).
+- [x] Manual smoke and tuning pass completed for rival movement and scene handoff stability.
+- [x] Rival AI overhaul completed: deterministic, role-based patterns now react to player motion and cover the full playfield.
+
 **Session Goal**
-- [ ] Expand playable depth without breaking current scene contracts.
+- [ ] Polish rival challenge/readability without breaking current scene contracts.
 
 **Execution Checklist**
-1. Layout Expansion
+1. Rival Motion Tuning
+- [ ] Run a focused playtest pass on all four rival roles for route readability and pressure.
+- [ ] Fine-tune per-rival speed scales and influence thresholds (center/top-center first).
+- [ ] Verify no rival stalls, twitches, or lane-edge bounce loops over a full round.
+
+2. Challenge and Fairness
+- [ ] Validate timer penalty cadence feels fair at close range.
+- [ ] Confirm player has escape windows after rival body contact stun.
+- [ ] Tune only constants first before introducing any new AI branches.
+
+3. Layout Expansion (Next)
 - [ ] Add one additional level layout while preserving `Boot -> Preload -> Menu -> Game` flow.
-- [ ] Verify player/rival spawn points remain valid in the new layout.
-- [ ] Keep collision behavior readable and consistent with current movement feel.
-
-2. Enemy Archetype Expansion
-- [ ] Add one new rival behavior variant with clear on-screen readability.
-- [ ] Keep behavior logic isolated so existing rivals continue to work unchanged.
-- [ ] Confirm rival pressure remains fair and understandable.
-
-3. Round Objectives and Balancing
-- [ ] Add one richer round objective or rule modifier for delivery flow.
-- [ ] Tune pacing values (timer pressure, score reward, or rival cadence) in small increments.
-- [ ] Validate that success/fail reason labels remain accurate for all end states.
+- [ ] Re-validate spawn safety and collision readability for both player and rivals.
 
 4. Manifest Flow Validation
 - [ ] Add or swap placeholder assets through `src/assets/manifest.js` only.

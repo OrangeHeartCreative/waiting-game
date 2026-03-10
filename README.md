@@ -7,12 +7,16 @@ HTML5 game built with Phaser 3 and Vite.
 This repository currently provides a playable prototype on top of the Week 1 scaffold:
 - Scene lifecycle (`Boot -> Preload -> Menu -> Game`)
 - Playable waiter loop in `GameScene`:
-	- Move with `WASD`/arrow keys or mouse drag
-	- Collect at `PASS` and deliver to the active seat in the `NEXT` queue
-	- 30-second per-order timer that resets on successful delivery
+	- Move with `WASD`/arrow keys
+	- Collect at `PASS` and deliver to the chef-announced, highlighted seat
+	- First chef callout waits 3 seconds, then each order timer starts only after the callout and movement toward `PASS`
+	- 30-second per-order timer resets on successful delivery
 	- Score gained from remaining time when a seat is served
+	- Chef speech bubble callouts announce each target table/seat
 - Rival waiter pressure system:
-	- Rivals patrol and chase early/aggressively
+	- Rivals follow role-based patrol scripts with distinct movement styles (left/center/right/top-center)
+	- Deterministic waypoint paths now sweep across the full playfield (top/mid/bottom and side-to-side) while preserving role-based behavior
+	- Waypoint progression reacts to player movement direction while staying deterministic (no random chase picks)
 	- Rival contact applies a `-2s` timer penalty on cooldown
 	- Rival body contact stuns rivals briefly to create escape windows
 - Maze collision and movement tuning:
@@ -26,10 +30,10 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 - Stateful menu transition handling:
 	- `GameScene` sends round summary data (`score`, `delivered`, `reason`, `reasonLabel`) back to `MenuScene`
 	- `MenuScene` renders summary and supports shift restart flow
-- Queue-linked activation:
-	- The right-side `NEXT` queue drives the currently active seat target
+	- Queue-linked activation:
+	- Internal queue progression drives the currently active seat target
 	- Queue generation is constrained to selected queue tables for each run
-	- Deliveries consume queue entries and refresh active seat/table highlights
+	- Deliveries consume queue entries and refresh chef callouts plus active seat/table highlights
 - Manifest-driven visual placeholders:
 	- Placeholder sprites load from `src/assets/manifest.js` via `PreloadScene`
 	- `GameScene` consumes manifest keys (player/table placeholders)
@@ -39,7 +43,7 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 ## Controls
 
 - Keyboard: `WASD` or arrow keys
-- Mouse: hold and drag to steer
+- Menu start/retry: `ENTER` or `SPACE`
 - `ESC`: return from `GameScene` to `MenuScene`
 
 ## Scripts
@@ -65,12 +69,12 @@ Scene handoff and responsibilities:
 - `BootScene` - Minimal startup handoff into preload
 - `PreloadScene` - Manifest-driven asset registration/loading
 - `MenuScene` - Start/retry entry and round summary display
-- `GameScene` - Playable service maze loop, collision, queue, and rival systems
+- `GameScene` - Playable service maze loop, collision, chef-guided seat targeting, and rival systems
 
 Flow:
 1. `BootScene -> PreloadScene`
 2. `PreloadScene -> MenuScene`
-3. `MenuScene -> GameScene` (pointer CTA)
+3. `MenuScene -> GameScene` (`ENTER` / `SPACE`)
 4. `GameScene -> MenuScene` (time-up or `ESC`)
 
 ## Prototype Status
