@@ -3,6 +3,7 @@
 Phaser + Vite + JavaScript foundation only. Gameplay mechanics are intentionally out of scope for this week.
 
 Note: This checklist is archived for Week 1 completion tracking. The current repository state has progressed beyond Week 1 and now includes playable delivery flow and rival AI behavior systems.
+Note: Current rival polish includes 4-direction patrol coverage, nearby buffered pursuit (without forced cut-off bumps), smoothed retargeting, and slower pacing.
 
 **Scope**
 - [x] Include setup, scene architecture, placeholder visuals/UI, preload conventions, lint/test/build, and docs.

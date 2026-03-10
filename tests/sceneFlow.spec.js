@@ -413,6 +413,47 @@ describe("scene flow smoke", () => {
     randomSpy.mockRestore();
   });
 
+  it("retargets nearby rivals to pursue the player with a buffer", () => {
+    const scene = new GameScene();
+    const rival = {
+      x: 100,
+      y: 100,
+      vx: 0,
+      vy: 0,
+      radius: 14,
+      stunnedUntil: 0,
+      blockedFrames: 0,
+      routeTarget: { x: 80, y: 80 },
+      lane: "center",
+      behaviorWaypoints: [{ x: 80, y: 80 }, { x: 120, y: 120 }],
+      behaviorIndex: 0,
+      behaviorDirection: 1,
+      behaviorMode: "loop",
+      behaviorPattern: "center",
+      patrolClockwise: true,
+      patrolWaypoints: [],
+      patrolWaypointIndex: 0,
+      lastTableContactAt: -Infinity,
+      routeHistory: [],
+      isInterceptingPlayer: false,
+    };
+
+    scene.arenaBounds = { minX: 0, maxX: 400, minY: 0, maxY: 300 };
+    scene.player = { x: 160, y: 100 };
+    scene.playerMotionVector = { x: 1, y: 0 };
+    scene.playerMotionStrength = 1;
+    scene.rivals = [rival];
+    scene.time = { now: 500 };
+    scene.resolveRivalPatrolCollision = (nextX, nextY) => ({ x: nextX, y: nextY });
+    scene.findNearestOpenPatrolPoint = (point) => point;
+
+    scene.updateRivals(1 / 60);
+
+    expect(rival.isInterceptingPlayer).toBe(true);
+    expect(rival.routeTarget.x).toBeGreaterThan(80);
+    expect(rival.routeTarget.x).toBeLessThan(scene.player.x);
+  });
+
   it("blocks rivals from spawning in pass pickup no-go zone", () => {
     const scene = new GameScene();
 

@@ -17,6 +17,9 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 	- Rivals follow role-based patrol scripts with distinct movement styles (left/center/right/top-center)
 	- Deterministic waypoint paths now sweep across the full playfield (top/mid/bottom and side-to-side) while preserving role-based behavior
 	- Waypoint progression reacts to player movement direction while staying deterministic (no random chase picks)
+	- Nearby rivals shift into buffered pursuit (approach with standoff distance) instead of hard cut-off blocking
+	- Pursuit retargeting is smoothed with hysteresis, timed retarget windows, and blended targets to reduce jitter
+	- Rival movement speed is intentionally toned down to keep motion readable and natural
 	- Rival contact applies a `-2s` timer penalty on cooldown
 	- Rival body contact stuns rivals briefly to create escape windows
 - Maze collision and movement tuning:

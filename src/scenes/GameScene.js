@@ -10,7 +10,7 @@ const NEXT_QUEUE_LENGTH = 8;
 const LEVEL_TABLE_QUEUE_COUNT = 4;
 const PLAYER_ASSET_KEY = "waiter-player";
 const RIVAL_COUNT = 4;
-const RIVAL_SPEED = 165;
+const RIVAL_SPEED = 150;
 const RIVAL_RADIUS = 14;
 const RIVAL_TIME_PENALTY_SECONDS = 1.5;
 const RIVAL_HIT_COOLDOWN_MS = 1400;
@@ -21,6 +21,14 @@ const RIVAL_STALL_MOVEMENT_EPSILON = 0.15;
 const RIVAL_STALL_WINDOW_MS = 900;
 const RIVAL_STALL_MAX_RECOVERIES = 2;
 const RIVAL_INITIAL_CHASE_DELAY_MS = 80;
+const RIVAL_PLAYER_FOLLOW_ENGAGE_RADIUS = 170;
+const RIVAL_PLAYER_FOLLOW_RELEASE_RADIUS = 210;
+const RIVAL_PLAYER_FOLLOW_BUFFER = 28;
+const RIVAL_PLAYER_FOLLOW_PREDICTION = 10;
+const RIVAL_PLAYER_FOLLOW_MIN_MOTION = 0.08;
+const RIVAL_PLAYER_FOLLOW_RETARGET_MS = 220;
+const RIVAL_PLAYER_FOLLOW_TARGET_BLEND = 0.35;
+const RIVAL_PLAYER_FOLLOW_SPEED_SCALE = 0.88;
 const RIVAL_DIRECTION_REPEAT_DOT = 0.86;
 const RIVAL_ROUTE_REACH_DISTANCE = 12;
 const RIVAL_ROUTE_RETARGET_MIN_MS = 800;
@@ -568,11 +576,45 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
-      if (!rival.routeTarget || this.isRivalAtRouteTarget(rival, rival.routeTarget)) {
-        this.assignNextRivalRouteTarget(rival, false);
+      const interceptionTarget = this.getRivalPlayerInterceptionTarget(rival);
+      if (interceptionTarget) {
+        const needsRetarget =
+          !rival.isInterceptingPlayer
+          || !rival.routeTarget
+          || now >= (rival.nextInterceptionRetargetAt ?? 0)
+          || this.isRivalAtRouteTarget(rival, rival.routeTarget);
+
+        if (needsRetarget) {
+          if (rival.isInterceptingPlayer && rival.routeTarget) {
+            const blend = RIVAL_PLAYER_FOLLOW_TARGET_BLEND;
+            rival.routeTarget = {
+              x: rival.routeTarget.x + (interceptionTarget.x - rival.routeTarget.x) * blend,
+              y: rival.routeTarget.y + (interceptionTarget.y - rival.routeTarget.y) * blend,
+            };
+          } else {
+            rival.routeTarget = interceptionTarget;
+          }
+
+          rival.nextInterceptionRetargetAt = now + RIVAL_PLAYER_FOLLOW_RETARGET_MS;
+        }
+
+        rival.isInterceptingPlayer = true;
+      } else {
+        if (rival.isInterceptingPlayer) {
+          rival.isInterceptingPlayer = false;
+          rival.nextInterceptionRetargetAt = 0;
+          this.assignNextRivalRouteTarget(rival, true);
+        }
+
+        if (!rival.routeTarget || this.isRivalAtRouteTarget(rival, rival.routeTarget)) {
+          this.assignNextRivalRouteTarget(rival, false);
+        }
       }
 
-      const currentRivalSpeed = rival.moveSpeed ?? RIVAL_SPEED;
+      const baseRivalSpeed = rival.moveSpeed ?? RIVAL_SPEED;
+      const currentRivalSpeed = rival.isInterceptingPlayer
+        ? baseRivalSpeed * RIVAL_PLAYER_FOLLOW_SPEED_SCALE
+        : baseRivalSpeed;
       let remainingMove = currentRivalSpeed * dt;
       let guard = 0;
       let zeroDistanceRetargets = 0;
@@ -756,6 +798,43 @@ export class GameScene extends Phaser.Scene {
       }
       return this.isRivalSpawnOpen(point.x, point.y);
     });
+  }
+
+  getRivalPlayerInterceptionTarget(rival) {
+    if (!this.player || !this.arenaBounds || !rival) {
+      return null;
+    }
+
+    const distanceToPlayer = Phaser.Math.Distance.Between(rival.x, rival.y, this.player.x, this.player.y);
+    const engageRadius = RIVAL_PLAYER_FOLLOW_ENGAGE_RADIUS;
+    const releaseRadius = RIVAL_PLAYER_FOLLOW_RELEASE_RADIUS;
+    const sensingRadius = rival.isInterceptingPlayer ? releaseRadius : engageRadius;
+    if (distanceToPlayer > sensingRadius) {
+      return null;
+    }
+
+    const toPlayerX = (this.player.x - rival.x) / Math.max(distanceToPlayer, 0.001);
+    const toPlayerY = (this.player.y - rival.y) / Math.max(distanceToPlayer, 0.001);
+
+    const motion = this.playerMotionVector ?? { x: 0, y: 0 };
+    const motionMagnitude = Math.hypot(motion.x, motion.y);
+    const hasMotionIntent =
+      (this.playerMotionStrength ?? 0) >= RIVAL_PLAYER_FOLLOW_MIN_MOTION && motionMagnitude > 0.001;
+    const motionUnitX = hasMotionIntent ? motion.x / motionMagnitude : 0;
+    const motionUnitY = hasMotionIntent ? motion.y / motionMagnitude : 0;
+
+    // Approach the player's lane while keeping a short standoff distance to reduce forced bumps.
+    const predictedPlayerX = this.player.x + motionUnitX * RIVAL_PLAYER_FOLLOW_PREDICTION;
+    const predictedPlayerY = this.player.y + motionUnitY * RIVAL_PLAYER_FOLLOW_PREDICTION;
+    const rawTargetX = predictedPlayerX - toPlayerX * RIVAL_PLAYER_FOLLOW_BUFFER;
+    const rawTargetY = predictedPlayerY - toPlayerY * RIVAL_PLAYER_FOLLOW_BUFFER;
+
+    const clampedTarget = {
+      x: Phaser.Math.Clamp(rawTargetX, this.arenaBounds.minX + rival.radius, this.arenaBounds.maxX - rival.radius),
+      y: Phaser.Math.Clamp(rawTargetY, this.arenaBounds.minY + rival.radius, this.arenaBounds.maxY - rival.radius),
+    };
+
+    return this.findNearestOpenPatrolPoint(clampedTarget, null) ?? clampedTarget;
   }
 
   getRivalVerticalIntentY(rival) {
@@ -1064,7 +1143,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const resolvedWaypoint = this.selectRivalTravelTarget(rival, nextWaypoint) ?? nextWaypoint;
+    const variedWaypoint = this.selectRivalVariationWaypoint(rival, nextWaypoint) ?? nextWaypoint;
+    const resolvedWaypoint = this.selectRivalTravelTarget(rival, variedWaypoint) ?? variedWaypoint;
     rival.routeTarget = { x: resolvedWaypoint.x, y: resolvedWaypoint.y };
     rival.routeHistory = rival.routeHistory ?? [];
     rival.routeHistory.unshift({ x: resolvedWaypoint.x, y: resolvedWaypoint.y });
@@ -1113,13 +1193,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     const verticalIntent = rival.verticalPatrolDirection >= 0 ? 1 : -1;
+    const horizontalIntent = rival.horizontalPatrolDirection >= 0 ? 1 : -1;
     const sorted = candidates
       .map((candidate) => {
         const distance = Phaser.Math.Distance.Between(rival.x, rival.y, candidate.x, candidate.y);
         const verticalDelta = (candidate.y - rival.y) * verticalIntent;
+        const horizontalDelta = (candidate.x - rival.x) * horizontalIntent;
         return {
           candidate,
-          score: distance + verticalDelta * 0.8 + Math.random() * 12,
+          score: distance + verticalDelta * 0.65 + horizontalDelta * 0.65 + Math.random() * 12,
         };
       })
       .sort((a, b) => b.score - a.score);
@@ -2459,6 +2541,8 @@ export class GameScene extends Phaser.Scene {
         lastFramePosition: { x: seed.x, y: seed.y },
         stallElapsedMs: 0,
         stallRecoveryCount: 0,
+        isInterceptingPlayer: false,
+        nextInterceptionRetargetAt: 0,
         outOfHomeZoneSince: null,
       };
 
