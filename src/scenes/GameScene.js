@@ -9,6 +9,8 @@ const FIRST_DAY_PLATE_GOAL = 10;
 const MIN_ROUND_DURATION_SECONDS = 15;
 const ROUND_DURATION_DECAY_PER_DAY = 2.5;
 const PLATE_GOAL_INCREASE_PER_DAY = 5;
+const PLATE_GOAL_SOFT_CAP_START_DAY = 5;
+const PLATE_GOAL_SOFT_CAP_INCREASE_PER_DAY = 2;
 const RIVAL_SPEED_INCREASE_PER_DAY = 0.05;
 const PLAYER_SPAWN_COLLISION_RADIUS = 20;
 const PLAYER_SPAWN_TABLE_BUFFER = 4;
@@ -18,6 +20,8 @@ const MIN_INTERACTION_RADIUS = 24;
 const NEXT_QUEUE_LENGTH = 8;
 const LEVEL_TABLE_QUEUE_COUNT = 4;
 const PLAYER_ASSET_KEY = "waiter-player";
+const RIVAL_ASSET_KEY = "waiter-rival";
+const CHEF_ASSET_KEY = "chef";
 const RIVAL_COUNT = 4;
 const RIVAL_SPEED = 150;
 const RIVAL_RADIUS = 14;
@@ -26,8 +30,7 @@ const RIVAL_HIT_COOLDOWN_MS = 1400;
 const RIVAL_STUN_DURATION_MS = 900;
 const RIVAL_BUMP_COOLDOWN_MS = 1800;
 const RIVAL_BUMP_CHASE_LOCKOUT_MS = 2600;
-const IN_GAME_HINT_DURATION_MS = 1400;
-const IN_GAME_HINT_OFFSET_Y = 44;
+const ROUND_BALANCE_LOG_DAY_LIMIT = 10;
 const RIVAL_STUCK_RECOVERY_THRESHOLD = 8;
 const RIVAL_HARD_RESET_THRESHOLD = 20;
 const RIVAL_STALL_MOVEMENT_EPSILON = 0.15;
@@ -62,6 +65,7 @@ const RIVAL_TABLE_SWITCH_CHANCE = 0.4;
 const RIVAL_EDGE_FOLLOW_STEP = 12;
 const RIVAL_BUMP_RESPONSE_FACTOR = 0.75;
 const RIVAL_BUMP_MIN_IMPULSE = 42;
+const PLAYER_RIVAL_BOUNCEBACK_DISTANCE = 8;
 const RIVAL_PASS_NO_GO_RADIUS = 52;
 const RIVAL_VARIATION_BASE_CHANCE = 0.18;
 const RIVAL_VARIATION_MAX_CHANCE = 0.38;
@@ -122,6 +126,7 @@ export class GameScene extends Phaser.Scene {
     this.score = 0;
     this.roundEnded = false;
     this.chefContainer = null;
+    this.chefBubbleContainer = null;
     this.chefSpeechText = null;
     this.chefHiddenY = 0;
     this.chefEmergeY = 0;
@@ -144,9 +149,9 @@ export class GameScene extends Phaser.Scene {
     this.playerLastPosition = null;
     this.playerMotionVector = { x: 0, y: 0 };
     this.playerMotionStrength = 0;
-    this.hintText = null;
-    this.hintHideAt = 0;
-    this.lastHintMessage = "";
+    this.playerLocationHintText = null;
+    this.rivalPenaltyHintText = null;
+    this.hideRivalPenaltyHintEvent = null;
     this.returnToMenuEvent = null;
     this.onEscKeyDown = null;
     this.layoutIndex = 0;
@@ -155,45 +160,105 @@ export class GameScene extends Phaser.Scene {
     this.shiftDelivered = 0;
     this.shiftNumber = 1;
     this.layoutPlateGoal = FIRST_DAY_PLATE_GOAL;
+    this.roundBumpCount = 0;
+    this.deliveryDurations = [];
   }
 
   create() {
     const { width, height } = this.scale;
-    const hudTop = SPACING.lg;
+    const hudTop = 0;
     const hudHeight = 70;
-    const arenaTop = hudTop + hudHeight + 20;
-    const arenaHeight = height - arenaTop - 60;
+    const hudPrimaryY = 8;
+    const hudSecondaryY = 36;
+    const hudWarningY = 44;
+    const arenaTop = hudTop + hudHeight;
+    const arenaHeight = height - arenaTop;
 
     this.layoutPlateGoal = this.getLayoutPlateGoalForDay(this.shiftNumber);
     this.remainingTime = this.getRoundDurationSecondsForDay(this.shiftNumber);
 
     this.cameras.main.setBackgroundColor(COLORS.background);
 
-    this.add.rectangle(width / 2, hudTop, width - SPACING.lg, hudHeight, COLORS.panel).setOrigin(0.5, 0);
+    this.add.rectangle(width / 2, hudTop, width, hudHeight, 0x000000, 1).setOrigin(0.5, 0).setDepth?.(30);
+    this.add
+      .rectangle(width / 2, hudTop + hudHeight / 2, width - 8, hudHeight - 8, 0x000000, 1)
+      .setStrokeStyle?.(3, 0x000000)
+      .setDepth?.(31);
 
-    this.scoreText = this.add.text(SPACING.md, SPACING.lg, `SCORE: ${this.getTotalScore()}`, {
-      fontFamily: "Verdana, sans-serif",
-      fontSize: "24px",
+    this.add.rectangle(138, hudTop + hudHeight / 2, 244, 54, 0x1d3455, 1).setStrokeStyle?.(2, 0x7fa0d0).setDepth?.(31);
+    this.add.rectangle(width / 2, hudTop + hudHeight / 2, 196, 54, 0x2c1220, 1).setStrokeStyle?.(2, 0xf6c453).setDepth?.(31);
+    this.add
+      .rectangle(width - 132, hudTop + hudHeight / 2, 248, 54, 0x1d3455, 1)
+      .setStrokeStyle?.(2, 0x7fa0d0)
+      .setDepth?.(31);
+
+    for (let x = 20; x < width - 20; x += 22) {
+      this.add.rectangle(x, hudTop + hudHeight - 8, 12, 4, 0xc8a030, 1).setDepth?.(31);
+    }
+
+    this.scoreText = this.add.text(SPACING.md, hudPrimaryY, `SCORE: ${this.getTotalScore()}`, {
+      fontFamily: "Courier New, monospace",
+      fontSize: "20px",
       color: "#f1f5ff",
+      stroke: "#0a1424",
+      strokeThickness: 3,
     });
+    this.scoreText.setDepth?.(32);
 
-    this.shiftLevelText = this.add.text(SPACING.md, hudTop + 44, this.formatShiftLabel(), {
-      fontFamily: "Verdana, sans-serif",
+    this.goalHudText = this.add.text(width - SPACING.md, hudPrimaryY, `GOAL LEFT: ${this.layoutPlateGoal}`, {
+      fontFamily: "Courier New, monospace",
+      fontSize: "18px",
+      color: "#f6c453",
+      stroke: "#251012",
+      strokeThickness: 3,
+    });
+    this.goalHudText.setOrigin?.(1, 0);
+    this.goalHudText.setDepth?.(32);
+
+    this.targetHudText = this.add.text(width - SPACING.md, hudSecondaryY, "TARGET: --", {
+      fontFamily: "Courier New, monospace",
+      fontSize: "14px",
+      color: "#d8e3f6",
+      stroke: "#0a1424",
+      strokeThickness: 2,
+    });
+    this.targetHudText.setOrigin?.(1, 0);
+    this.targetHudText.setDepth?.(32);
+
+    this.shiftLevelText = this.add.text(SPACING.md, hudSecondaryY, this.formatShiftLabel(), {
+      fontFamily: "Courier New, monospace",
       fontSize: "13px",
       color: "#b9c6dd",
+      stroke: "#0a1424",
+      strokeThickness: 2,
     });
+    this.shiftLevelText.setDepth?.(32);
 
     this.timerText = this.add
-      .text(width / 2, SPACING.lg, `TIMER: ${this.formatTime(this.remainingTime)}`, {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "24px",
-        color: "#f1f5ff",
+      .text(width / 2, hudPrimaryY, `TIMER: ${this.formatTime(this.remainingTime)}`, {
+        fontFamily: "Courier New, monospace",
+        fontSize: "21px",
+        color: "#fff0c7",
+        stroke: "#241112",
+        strokeThickness: 3,
       })
       .setOrigin(0.5, 0);
+    this.timerText.setDepth?.(32);
+
+    this.rivalPenaltyHintText = this.add.text(width / 2, hudWarningY, "", {
+      fontFamily: "Courier New, monospace",
+      fontSize: "14px",
+      color: "#f6c453",
+      stroke: "#2d1315",
+      strokeThickness: 2,
+    });
+    this.rivalPenaltyHintText.setOrigin?.(0.5, 0);
+    this.rivalPenaltyHintText.setAlpha?.(0);
+    this.rivalPenaltyHintText.setDepth?.(32);
 
     this.arenaBounds = {
-      minX: SPACING.lg,
-      maxX: width - 130,
+      minX: 0,
+      maxX: width,
       minY: arenaTop,
       maxY: arenaTop + arenaHeight,
     };
@@ -251,30 +316,20 @@ export class GameScene extends Phaser.Scene {
     this.player = this.createPlayerVisual(spawnPoint.x, spawnPoint.y);
     this.playerLastPosition = { x: this.player.x, y: this.player.y };
 
-    this.hintText = this.add.text(spawnPoint.x, spawnPoint.y - IN_GAME_HINT_OFFSET_Y, "", {
+    this.playerLocationHintText = this.add.text(spawnPoint.x, spawnPoint.y - 34, "", {
       fontFamily: "Verdana, sans-serif",
-      fontSize: "16px",
-      color: "#f6c453",
+      fontSize: "12px",
+      color: "#fff4c9",
+      stroke: "#200608",
+      strokeThickness: 2,
     });
-    this.hintText.setOrigin?.(0.5);
-    this.hintText.setDepth?.(10);
-    this.hintText.setAlpha?.(0);
+    this.playerLocationHintText.setOrigin?.(0.5, 1);
+    this.playerLocationHintText.setDepth?.(9);
+    this.updatePlayerLocationHint();
 
     this.nextTargets = this.createInitialSeatQueue(NEXT_QUEUE_LENGTH);
     this.scheduleNextTargetAnnouncement();
-
-    this.add
-      .text(
-        SPACING.md,
-        height - SPACING.md,
-        "Pac maze service: follow chef callouts and the highlighted seat",
-        {
-          fontFamily: "Verdana, sans-serif",
-          fontSize: "15px",
-          color: "#b9c6dd",
-        }
-      )
-      .setOrigin(0, 1);
+    this.updatePersistentHud();
 
     this.cursors = this.input?.keyboard?.createCursorKeys();
     this.wasd = this.input?.keyboard?.addKeys("W,A,S,D");
@@ -315,8 +370,14 @@ export class GameScene extends Phaser.Scene {
       this.returnToMenuEvent = null;
     }
 
+    if (this.hideRivalPenaltyHintEvent?.remove) {
+      this.hideRivalPenaltyHintEvent.remove(false);
+      this.hideRivalPenaltyHintEvent = null;
+    }
+
     if (this.tweens?.killTweensOf) {
       this.tweens.killTweensOf(this.chefContainer);
+      this.tweens.killTweensOf(this.chefBubbleContainer);
       this.tweens.killTweensOf(this.chefSpeechText);
     }
   }
@@ -356,13 +417,11 @@ export class GameScene extends Phaser.Scene {
 
     const dt = delta / 1000;
     this.updateTimer(dt);
-    this.updateHintText();
     if (this.roundEnded) {
       return;
     }
 
     this.handleMovement(dt);
-    this.updateHintText();
     this.updatePlayerMotionIntent(dt);
     this.tryStartOrderTimer();
     if (this.roundEnded) {
@@ -377,6 +436,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.handleInteractions();
+    this.updatePlayerLocationHint();
   }
 
   updateTimer(dt) {
@@ -393,9 +453,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (this.remainingTime <= 15) {
-      this.setFeedback("FINAL RUSH");
-    }
   }
 
   handleMovement(dt) {
@@ -471,6 +528,8 @@ export class GameScene extends Phaser.Scene {
     });
 
     if (collidedRival) {
+      this.applyPlayerRivalBounceback(collidedRival, previousX, previousY, nextX, nextY);
+
       const now = this.time?.now ?? Date.now();
       const bumpCooldownUntil = collidedRival.bumpCooldownUntil ?? 0;
       if (now >= bumpCooldownUntil) {
@@ -492,6 +551,37 @@ export class GameScene extends Phaser.Scene {
     }));
 
     return this.resolveCollisionAgainstColliders(nextX, nextY, previousX, previousY, rivalColliders, bodyRadius);
+  }
+
+  applyPlayerRivalBounceback(rival, previousX, previousY, nextX, nextY) {
+    if (!rival) {
+      return;
+    }
+
+    // Nudge rival slightly away from the player's approach vector to prevent sticky overlap.
+    let awayX = rival.x - previousX;
+    let awayY = rival.y - previousY;
+
+    if (Math.abs(awayX) < 0.001 && Math.abs(awayY) < 0.001) {
+      awayX = rival.x - nextX;
+      awayY = rival.y - nextY;
+    }
+
+    const len = Math.hypot(awayX, awayY) || 1;
+    const unitX = awayX / len;
+    const unitY = awayY / len;
+    const candidateX = rival.x + unitX * PLAYER_RIVAL_BOUNCEBACK_DISTANCE;
+    const candidateY = rival.y + unitY * PLAYER_RIVAL_BOUNCEBACK_DISTANCE;
+    const resolved = this.resolveRivalPatrolCollision(candidateX, candidateY, rival.x, rival.y, rival.radius);
+
+    if (resolved.x === rival.x && resolved.y === rival.y) {
+      return;
+    }
+
+    rival.x = resolved.x;
+    rival.y = resolved.y;
+    rival.visual?.setPosition?.(rival.x, rival.y);
+    rival.labelVisual?.setPosition?.(rival.x, rival.y);
   }
 
   resolveTableCollision(nextX, nextY, previousX, previousY, bodyRadius = 14) {
@@ -583,7 +673,6 @@ export class GameScene extends Phaser.Scene {
     ) {
       this.carryingOrder = true;
       this.orderStage = "needSeat";
-      this.setFeedback(`DELIVER ${this.getCurrentTargetSeatLabel()}`);
       this.setPassPickupAvailability(false);
       return;
     }
@@ -597,10 +686,12 @@ export class GameScene extends Phaser.Scene {
       this.carryingOrder = false;
       this.orderStage = "needPickup";
       this.deliveredPlates += 1;
+      const deliveryDuration = this.getRoundDurationSecondsForDay(this.shiftNumber) - this.remainingTime;
+      this.deliveryDurations.push(Math.max(0, deliveryDuration));
       const earnedScore = Math.ceil(this.remainingTime);
       this.score += earnedScore;
       this.scoreText?.setText(`SCORE: ${this.getTotalScore()}`);
-      this.setFeedback(`SERVED ${targetSeat.label} (+${earnedScore})`);
+      this.updatePersistentHud();
 
       if (this.deliveredPlates >= this.layoutPlateGoal) {
         this.endRound("LAYOUT_CLEAR");
@@ -1737,9 +1828,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.lastRivalPenaltyAt = now;
+    this.roundBumpCount += 1;
     this.remainingTime = Math.max(0, this.remainingTime - RIVAL_TIME_PENALTY_SECONDS);
     this.timerText?.setText(`TIMER: ${this.formatTime(this.remainingTime)}`);
-    this.setFeedback(`RIVAL BUMP -${RIVAL_TIME_PENALTY_SECONDS}s`);
+    this.showRivalPenaltyHint(RIVAL_TIME_PENALTY_SECONDS);
 
     if (this.remainingTime <= 0) {
       this.endRound("TIME_UP");
@@ -1917,6 +2009,8 @@ export class GameScene extends Phaser.Scene {
       zone.visual?.setAlpha?.(hasActiveSeat ? 1 : 0.65);
       zone.labelText?.setColor?.(hasActiveSeat ? "#101522" : "#7f8da9");
     });
+
+    this.updatePersistentHud();
   }
 
   advanceTargetQueue(completedSeatLabel) {
@@ -1967,11 +2061,9 @@ export class GameScene extends Phaser.Scene {
     this.chefEmergeY = this.pickupZone.y - 6;
     const chefX = this.pickupZone.x;
 
-    const chefBody = this.add.rectangle(0, 16, 54, 54, 0xf8f3e7, 1).setStrokeStyle(2, 0x2f3d55);
-    const chefApron = this.add.rectangle(0, 24, 30, 34, 0xe7f0ff, 1).setStrokeStyle(1, 0x5c759d);
-    const chefHat = this.add.ellipse(0, -8, 60, 24, 0xffffff, 1).setStrokeStyle(2, 0x2f3d55);
-    const chefFace = this.add.circle(0, 4, 16, 0xffd3ad, 1).setStrokeStyle(2, 0x2f3d55);
-    const chefMouth = this.add.rectangle(0, 11, 10, 2, 0x2f3d55, 1);
+    const chefVisual = this.textures?.exists(CHEF_ASSET_KEY)
+      ? this.add.image(0, 16, CHEF_ASSET_KEY).setDisplaySize(42, 58)
+      : this.add.rectangle(0, 16, 54, 54, 0xf8f3e7, 1).setStrokeStyle(2, 0x2f3d55);
 
     const bubbleShadow = this.add.rectangle(3, -56, 236, 70, 0x20314d, 0.38);
     const bubbleBg = this.add.rectangle(0, -58, 232, 66, 0xf8fbff, 1).setStrokeStyle(2, 0x4d6388);
@@ -1987,23 +2079,24 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.chefContainer = this.add.container(chefX, this.chefHiddenY, [
+      chefVisual,
+    ]);
+    this.chefContainer.setDepth?.(20);
+    this.chefContainer.setVisible(false);
+
+    this.chefBubbleContainer = this.add.container(chefX, this.chefHiddenY, [
       bubbleShadow,
       bubbleBg,
       bubblePointer,
       this.chefSpeechText,
-      chefBody,
-      chefApron,
-      chefHat,
-      chefFace,
-      chefMouth,
     ]);
-    this.chefContainer.setDepth?.(8);
-    this.chefContainer.setVisible(false);
+    this.chefBubbleContainer.setDepth?.(40);
+    this.chefBubbleContainer.setVisible(false);
   }
 
   announceCurrentTargetSeat() {
     const seatLabel = this.getCurrentTargetSeatLabel();
-    if (!seatLabel || !this.chefContainer || !this.chefSpeechText) {
+    if (!seatLabel || !this.chefContainer || !this.chefBubbleContainer || !this.chefSpeechText) {
       return;
     }
 
@@ -2015,13 +2108,16 @@ export class GameScene extends Phaser.Scene {
 
     const tableLabel = seatLabel.slice(0, 1);
     const seatNumber = seatLabel.slice(1);
-    this.chefSpeechText.setText(`NEXT UP\nTABLE ${tableLabel} / SEAT ${seatNumber}`);
+    this.chefSpeechText.setText(`${tableLabel}${seatNumber}`);
 
     this.chefContainer.setVisible(true);
+    this.chefBubbleContainer.setVisible(true);
     this.chefContainer.y = this.chefHiddenY;
+    this.chefBubbleContainer.y = this.chefHiddenY;
 
     if (this.tweens?.killTweensOf) {
       this.tweens.killTweensOf(this.chefContainer);
+      this.tweens.killTweensOf(this.chefBubbleContainer);
       this.tweens.killTweensOf(this.chefSpeechText);
     }
 
@@ -2029,6 +2125,12 @@ export class GameScene extends Phaser.Scene {
       this.chefSpeechText.setAlpha(0);
       this.tweens.add({
         targets: this.chefContainer,
+        y: this.chefEmergeY,
+        duration: 300,
+        ease: "Back.Out",
+      });
+      this.tweens.add({
+        targets: this.chefBubbleContainer,
         y: this.chefEmergeY,
         duration: 300,
         ease: "Back.Out",
@@ -2043,6 +2145,7 @@ export class GameScene extends Phaser.Scene {
       });
     } else {
       this.chefContainer.y = this.chefEmergeY;
+      this.chefBubbleContainer.y = this.chefEmergeY;
       this.chefSpeechText.setAlpha(1);
     }
 
@@ -2067,39 +2170,45 @@ export class GameScene extends Phaser.Scene {
               this.chefContainer?.setVisible(false);
             },
           });
+          this.tweens.add({
+            targets: this.chefBubbleContainer,
+            y: this.chefHiddenY,
+            duration: 220,
+            ease: "Sine.In",
+            onComplete: () => {
+              this.chefBubbleContainer?.setVisible(false);
+            },
+          });
           return;
         }
 
         this.chefContainer.setVisible(false);
+        this.chefBubbleContainer.setVisible(false);
       });
     }
   }
 
-  setFeedback(message, durationMs = IN_GAME_HINT_DURATION_MS) {
-    if (!message || !this.hintText) {
+  showRivalPenaltyHint(secondsLost) {
+    if (!this.rivalPenaltyHintText) {
       return;
     }
 
-    this.lastHintMessage = message;
-    this.hintHideAt = (this.time?.now ?? Date.now()) + durationMs;
-    this.hintText.setText?.(message);
-    this.hintText.setAlpha?.(1);
-    this.updateHintText();
-  }
+    this.rivalPenaltyHintText.setText?.(`-${secondsLost}s`);
+    this.rivalPenaltyHintText.setAlpha?.(1);
 
-  updateHintText() {
-    if (!this.hintText) {
+    if (this.hideRivalPenaltyHintEvent?.remove) {
+      this.hideRivalPenaltyHintEvent.remove(false);
+      this.hideRivalPenaltyHintEvent = null;
+    }
+
+    if (this.time?.delayedCall) {
+      this.hideRivalPenaltyHintEvent = this.time.delayedCall(900, () => {
+        this.rivalPenaltyHintText?.setAlpha?.(0);
+      });
       return;
     }
 
-    if (this.player) {
-      this.hintText.setPosition?.(this.player.x, this.player.y - IN_GAME_HINT_OFFSET_Y);
-    }
-
-    const now = this.time?.now ?? Date.now();
-    if (now >= (this.hintHideAt ?? 0)) {
-      this.hintText.setAlpha?.(0);
-    }
+    this.rivalPenaltyHintText.setAlpha?.(0);
   }
 
   tryStartOrderTimer() {
@@ -2137,8 +2246,8 @@ export class GameScene extends Phaser.Scene {
     const isLayoutComplete = reason === "LAYOUT_CLEAR";
     const isLastLevelInDay = this.shiftLevel >= LEVELS_PER_SHIFT;
     const summary = this.buildRoundSummary(reason, this.shiftLevel);
+    this.logRoundBalanceSnapshot(reason);
     this.roundEnded = true;
-    this.setFeedback(summary.banner, 900);
 
     if (this.returnToMenuEvent?.remove) {
       this.returnToMenuEvent.remove(false);
@@ -2176,7 +2285,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   getLayoutIndexForDay(dayNumber) {
-    return Math.max(0, (Math.max(1, dayNumber) - 1) % 2);
+    const cadence = [0, 1, 2, 1];
+    return cadence[(Math.max(1, dayNumber) - 1) % cadence.length];
   }
 
   getDayDifficultyStep(dayNumber = this.shiftNumber) {
@@ -2189,8 +2299,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   getLayoutPlateGoalForDay(dayNumber = this.shiftNumber) {
-    const step = this.getDayDifficultyStep(dayNumber);
-    return FIRST_DAY_PLATE_GOAL + step * PLATE_GOAL_INCREASE_PER_DAY;
+    const normalizedDay = Math.max(1, dayNumber ?? 1);
+    const preSoftCapDays = Math.max(0, Math.min(normalizedDay, PLATE_GOAL_SOFT_CAP_START_DAY) - 1);
+    const postSoftCapDays = Math.max(0, normalizedDay - PLATE_GOAL_SOFT_CAP_START_DAY);
+    return FIRST_DAY_PLATE_GOAL
+      + preSoftCapDays * PLATE_GOAL_INCREASE_PER_DAY
+      + postSoftCapDays * PLATE_GOAL_SOFT_CAP_INCREASE_PER_DAY;
   }
 
   getRivalSpeedScaleForDay(dayNumber = this.shiftNumber) {
@@ -2206,7 +2320,7 @@ export class GameScene extends Phaser.Scene {
     if (reasonCode === "LAYOUT_CLEAR") {
       const level = shiftLevel ?? this.shiftLevel;
       const label = `Layout ${level} complete`;
-      const banner = `LAYOUT ${level} CLEAR`;
+      const banner = "SHIFT CHANGE";
       return { code: reasonCode, label, status: banner, banner };
     }
 
@@ -2236,12 +2350,21 @@ export class GameScene extends Phaser.Scene {
 
   createPlayerVisual(x, y) {
     if (this.textures?.exists(PLAYER_ASSET_KEY)) {
-      return this.add.image(x, y, PLAYER_ASSET_KEY).setDisplaySize(40, 40);
+      return this.add.image(x, y, PLAYER_ASSET_KEY).setDisplaySize(28, 42);
     }
 
     const player = this.add.circle(x, y, 20, COLORS.accent, 1);
     player.setStrokeStyle?.(3, COLORS.text);
     return player;
+  }
+
+  updatePlayerLocationHint() {
+    if (!this.player || !this.playerLocationHintText) {
+      return;
+    }
+
+    this.playerLocationHintText.setText?.("P1");
+    this.playerLocationHintText.setPosition?.(this.player.x, this.player.y - 24);
   }
 
   getTableColliderBounds(variant) {
@@ -2252,8 +2375,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   createTableVisual(x, y, variant) {
-    const table = this.add.rectangle(x, y, variant.width, variant.height, 0x7bbf7b, 1);
-    table.setStrokeStyle?.(3, 0xd7f4d7);
+    // Dark mahogany wood frame
+    this.add.rectangle(x, y, variant.width + 6, variant.height + 6, 0x3A1A08, 1);
+    // Cream tablecloth face
+    const table = this.add.rectangle(x, y, variant.width, variant.height, 0xF0E8D4, 1);
+    // Gold trim inset line
+    this.add.rectangle(x, y, variant.width - 6, variant.height - 6, 0xF0E8D4, 0)
+      .setStrokeStyle?.(1, 0xC8A030);
     return table;
   }
 
@@ -2275,9 +2403,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   getCurrentLayoutTablePositions() {
-    return this.layoutIndex === 1
-      ? this.getLayout2TablePositions()
-      : this.getLayout1TablePositions();
+    if (this.layoutIndex === 1) {
+      return this.getLayout2TablePositions();
+    }
+
+    if (this.layoutIndex === 2) {
+      return this.getLayout3TablePositions();
+    }
+
+    return this.getLayout1TablePositions();
   }
 
   // Layout 1 (default): dense upper half with open lower lanes.
@@ -2310,6 +2444,42 @@ export class GameScene extends Phaser.Scene {
       { label: "H", x: this.mazeColumns[3], y: this.mazeRows[3] },
       { label: "I", x: this.mazeColumns[5], y: this.mazeRows[3] },
     ];
+  }
+
+  // Layout 3: compressed center with offset lower anchors to force lateral reroutes.
+  getLayout3TablePositions() {
+    return [
+      { label: "A", x: this.mazeColumns[3], y: this.mazeRows[1] },
+      { label: "B", x: this.mazeColumns[1], y: this.mazeRows[1] },
+      { label: "C", x: this.mazeColumns[5], y: this.mazeRows[1] },
+      { label: "D", x: this.mazeColumns[2], y: this.mazeRows[2] },
+      { label: "E", x: this.mazeColumns[4], y: this.mazeRows[2] },
+      { label: "F", x: this.mazeColumns[0], y: this.mazeRows[3] },
+      { label: "G", x: this.mazeColumns[6], y: this.mazeRows[3] },
+      { label: "H", x: this.mazeColumns[2], y: this.mazeRows[4] },
+      { label: "I", x: this.mazeColumns[4], y: this.mazeRows[4] },
+    ];
+  }
+
+  logRoundBalanceSnapshot(reason) {
+    if (this.shiftNumber > ROUND_BALANCE_LOG_DAY_LIMIT) {
+      return;
+    }
+
+    const averageDeliverySeconds = this.deliveryDurations.length > 0
+      ? Number((this.deliveryDurations.reduce((sum, value) => sum + value, 0) / this.deliveryDurations.length).toFixed(2))
+      : null;
+
+    globalThis.console?.info?.("[BALANCE SNAPSHOT]", {
+      day: this.shiftNumber,
+      shiftLevel: this.shiftLevel,
+      layoutIndex: this.layoutIndex,
+      layoutGoal: this.layoutPlateGoal,
+      delivered: this.deliveredPlates,
+      bumpCount: this.roundBumpCount,
+      averageDeliverySeconds,
+      reason,
+    });
   }
 
   createTableZones() {
@@ -2669,13 +2839,14 @@ export class GameScene extends Phaser.Scene {
           }
 
           const label = `${table.label}${offset.number}`;
-          const visual = this.add.circle(x, y, 13, 0x334f7c, 1);
-          visual.setStrokeStyle?.(2, 0x93add4);
+          // Seat: gold outer ring + burgundy velvet fill
+          this.add.circle(x, y, 14, 0xC8A030, 1);
+          const visual = this.add.circle(x, y, 12, 0x5A1428, 1);
           const labelText = this.add
             .text(x, y, String(offset.number), {
               fontFamily: "Verdana, sans-serif",
-              fontSize: "11px",
-              color: "#d6e2f6",
+              fontSize: "10px",
+              color: "#F0C860",
             })
             .setOrigin(0.5);
 
@@ -2694,22 +2865,41 @@ export class GameScene extends Phaser.Scene {
   }
 
   drawPickupCounter() {
-    // Back wall kitchen door centered on the arena's top edge.
+    const px = this.pickupZone.x;
+    const topY = this.arenaBounds.minY;
+
+    // Back wall panel (dark wainscoting color, spans full counter width)
+    this.add.rectangle(px, topY + 6, 240, 16, 0x200608, 1).setStrokeStyle(1, 0xC8A030);
+
+    // Counter cabinet (dark mahogany wood)
+    this.add.rectangle(px, this.pickupZone.y - 4, 110, 36, 0x3A1A08, 1).setStrokeStyle(2, 0xC8A030);
+
+    // Marble counter top
+    this.add.rectangle(px, this.pickupZone.y + 14, 120, 10, 0xEAE0D0, 1).setStrokeStyle(1, 0xC0A880);
+
+    // Marble veining (subtle diagonal accent lines using tiny rects)
+    this.add.rectangle(px - 20, this.pickupZone.y + 13, 18, 1, 0xD0C8B8, 0.6);
+    this.add.rectangle(px + 10, this.pickupZone.y + 15, 22, 1, 0xD0C8B8, 0.6);
+
+    // "PASS" label in gold, SNES-style font weight
     this.add
-      .rectangle(this.pickupZone.x, this.arenaBounds.minY + 6, 220, 14, 0x2b4269, 1)
-      .setStrokeStyle(2, 0x7ea1d4);
-    this.add.rectangle(this.pickupZone.x, this.pickupZone.y, 94, 44, 0x2a3e63, 1).setStrokeStyle(2, 0xb9cbea);
-    this.add.rectangle(this.pickupZone.x, this.pickupZone.y + 22, 122, 10, 0x334f7c, 1).setStrokeStyle(2, 0x9cb7df);
-    this.add
-      .text(this.pickupZone.x, this.pickupZone.y, "PASS", {
+      .text(px, this.pickupZone.y + 2, "PASS", {
         fontFamily: "Verdana, sans-serif",
-        fontSize: "15px",
-        color: "#f1f5ff",
+        fontSize: "13px",
+        color: "#F0C860",
+        stroke: "#200608",
+        strokeThickness: 2,
       })
       .setOrigin(0.5);
+
+    // Brass handle decorations (small gold rects)
+    this.add.rectangle(px - 26, this.pickupZone.y - 2, 6, 10, 0xC8880A, 1).setStrokeStyle(1, 0xF0C060);
+    this.add.rectangle(px + 26, this.pickupZone.y - 2, 6, 10, 0xC8880A, 1).setStrokeStyle(1, 0xF0C060);
+
+    // Interaction pickup indicator (gold star/dot below counter)
     this.passInteractionVisual = this.add
-      .circle(this.passInteractionZone.x, this.passInteractionZone.y, 8, 0xf6c453, 0.55)
-      .setStrokeStyle(2, 0xffefb5);
+      .circle(this.passInteractionZone.x, this.passInteractionZone.y, 9, 0xF0C030, 0.7)
+      .setStrokeStyle(2, 0xFFE080);
     this.setPassPickupAvailability(this.passReadyForPickup);
   }
 
@@ -2727,6 +2917,25 @@ export class GameScene extends Phaser.Scene {
     this.passInteractionVisual.setStrokeStyle?.(2, strokeColor);
   }
 
+  updatePersistentHud() {
+    if (this.goalHudText) {
+      const remainingGoal = Math.max(0, this.layoutPlateGoal - this.deliveredPlates);
+      this.goalHudText.setText?.(`GOAL LEFT: ${remainingGoal}`);
+    }
+
+    if (!this.targetHudText) {
+      return;
+    }
+
+    const announcedSeat = this.announcedTargetSeatLabel;
+    if (!announcedSeat) {
+      this.targetHudText.setText?.("TARGET: --");
+      return;
+    }
+
+    this.targetHudText.setText?.(`TARGET: ${announcedSeat}`);
+  }
+
   createRivals(playerSpawn) {
     const usedSpawns = [];
 
@@ -2742,16 +2951,14 @@ export class GameScene extends Phaser.Scene {
         };
       const seed = laneSpawn ?? fallbackSpawn;
       usedSpawns.push(seed);
-      const visual = this.add.circle(seed.x, seed.y, RIVAL_RADIUS, 0xa83a3a, 1);
-      visual.setStrokeStyle?.(2, 0xffcdcd);
-      const labelVisual = this.add
-        .text(seed.x, seed.y, "R", {
-          fontFamily: "Verdana, sans-serif",
-          fontSize: "12px",
-          color: "#fff3f3",
-        })
-        .setOrigin(0.5)
-        .setDepth?.(2);
+      let visual;
+      if (this.textures?.exists(RIVAL_ASSET_KEY)) {
+        visual = this.add.image(seed.x, seed.y, RIVAL_ASSET_KEY).setDisplaySize(28, 42);
+      } else {
+        visual = this.add.circle(seed.x, seed.y, RIVAL_RADIUS, 0x3A0A18, 1);
+        visual.setStrokeStyle?.(2, 0xC8A030);
+      }
+      const labelVisual = null;
 
       const rival = {
         x: seed.x,
@@ -2858,17 +3065,67 @@ export class GameScene extends Phaser.Scene {
   }
 
   drawPacmanMaze() {
-    const arenaWidth = this.arenaBounds.maxX - this.arenaBounds.minX;
-    const arenaHeight = this.arenaBounds.maxY - this.arenaBounds.minY;
-    const centerX = this.arenaBounds.minX + arenaWidth / 2;
-    const centerY = this.arenaBounds.minY + arenaHeight / 2;
+    const { minX, maxX, maxY } = this.arenaBounds;
+    const minY = 0;
+    const arenaWidth = maxX - minX;
+    const arenaHeight = maxY - minY;
+    const centerX = minX + arenaWidth / 2;
+    const centerY = minY + arenaHeight / 2;
 
-    this.add.rectangle(centerX, centerY, arenaWidth, arenaHeight, 0x1c2f4f, 0.35).setStrokeStyle(3, 0x6f8eb8);
+    // --- Wainscoting / wall backdrop ---
+    this.add.rectangle(centerX, centerY, arenaWidth + 32, arenaHeight + 32, 0x3A0E12, 1);
 
-    this.mazeRows.forEach((y) => {
-      this.mazeColumns.forEach((x) => {
-        this.add.circle(x, y, 4, 0xc9d9f2, 0.8);
-      });
-    });
+    // --- Checkered marble floor (terra cotta / cream, SNES-style 40px tiles) ---
+    const tileSize = 40;
+    const graphics = this.add.graphics();
+    const cols = Math.ceil(arenaWidth / tileSize) + 1;
+    const rows = Math.ceil(arenaHeight / tileSize) + 1;
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const tileX = minX + col * tileSize;
+        const tileY = minY + row * tileSize;
+        const isLight = (row + col) % 2 === 0;
+        graphics.fillStyle(isLight ? 0xF0E6CC : 0xC05030, 1);
+        graphics.fillRect(tileX, tileY, tileSize, tileSize);
+      }
+    }
+
+    // Clip floor to arena bounds using a covering mask rect on edges
+    graphics.fillStyle(0x3A0E12, 1);
+    // Left overhang clip
+    graphics.fillRect(minX - tileSize, minY, tileSize, arenaHeight);
+    // Right overhang clip
+    graphics.fillRect(maxX, minY, tileSize, arenaHeight);
+    // Top overhang clip
+    graphics.fillRect(minX - tileSize, minY - tileSize, arenaWidth + tileSize * 2, tileSize);
+    // Bottom overhang clip
+    graphics.fillRect(minX - tileSize, maxY, arenaWidth + tileSize * 2, tileSize);
+
+    // --- Grout lines overlay (subtle gold) ---
+    const grout = this.add.graphics();
+    grout.lineStyle(1, 0xC8A030, 0.35);
+    for (let col = 0; col <= cols; col++) {
+      const x = minX + col * tileSize;
+      grout.beginPath();
+      grout.moveTo(x, minY);
+      grout.lineTo(x, maxY);
+      grout.strokePath();
+    }
+    for (let row = 0; row <= rows; row++) {
+      const y = minY + row * tileSize;
+      grout.beginPath();
+      grout.moveTo(minX, y);
+      grout.lineTo(maxX, y);
+      grout.strokePath();
+    }
+
+    // --- Decorative wainscoting border ---
+    const border = this.add.graphics();
+    // Outer dark border
+    border.lineStyle(6, 0x200608, 1);
+    border.strokeRect(minX, minY, arenaWidth, arenaHeight);
+    // Inner gold trim
+    border.lineStyle(2, 0xC8A030, 1);
+    border.strokeRect(minX + 4, minY + 4, arenaWidth - 8, arenaHeight - 8);
   }
 }

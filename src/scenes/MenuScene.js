@@ -15,68 +15,81 @@ export class MenuScene extends Phaser.Scene {
     this.transitioningToGame = false;
   }
 
-  create(data) {
+  create() {
     const { width, height } = this.scale;
-    const summary = this.resolveRoundSummary(data);
-    const ctaLabel = summary.hasRoundResult ? "RETRY" : "START SHIFT";
-    const startHint = summary.hasRoundResult ? "Press ENTER or SPACE to retry" : "Press ENTER or SPACE to start";
+    const startHint = "Press ENTER or SPACE to start";
 
     this.cameras.main.setBackgroundColor(COLORS.background);
 
+    this.add.rectangle(width / 2, height / 2, width, height, 0x0a1526, 1);
+    this.add.rectangle(width / 2, height / 2, width * 0.96, height * 0.9, 0x10243e, 1).setStrokeStyle(4, 0xc8a030);
+    this.add.rectangle(width / 2, 22, width * 0.94, 18, 0x2a0b10, 1).setStrokeStyle(2, 0xc8a030);
+    this.add.rectangle(width / 2, height - 22, width * 0.94, 18, 0x2a0b10, 1).setStrokeStyle(2, 0xc8a030);
+
+    for (let y = 42; y < height - 42; y += 16) {
+      this.add.rectangle(width / 2, y, width * 0.92, 2, 0x183050, 0.5);
+    }
+
+    const titlePanelY = height * 0.28;
+    const titlePanelWidth = Math.min(width * 0.8, 920);
+    this.add.rectangle(width / 2, titlePanelY, titlePanelWidth + 16, 116, 0x07101d, 1);
+    this.add.rectangle(width / 2, titlePanelY, titlePanelWidth, 102, 0x1a2f4f, 1).setStrokeStyle(4, 0xf6c453);
+    this.add.rectangle(width / 2 - titlePanelWidth / 2 + 24, titlePanelY, 14, 64, 0xc8a030, 1);
+    this.add.rectangle(width / 2 + titlePanelWidth / 2 - 24, titlePanelY, 14, 64, 0xc8a030, 1);
+
     this.add
-      .text(width / 2, height * 0.35, "WAITING GAME", {
-        fontFamily: "Georgia, serif",
-        fontSize: "64px",
-        color: "#f1f5ff",
+      .text(width / 2, height * 0.28, "WAITING GAME", {
+        fontFamily: "Courier New, monospace",
+        fontSize: "66px",
+        color: "#f6c453",
+        stroke: "#23080a",
+        strokeThickness: 10,
       })
       .setOrigin(0.5);
 
-    const cta = this.add.rectangle(width / 2, height * 0.6, 280, 72, COLORS.accent);
-    cta.setStrokeStyle(3, COLORS.text);
+    const controlsPanelY = height * 0.56;
+    this.add.rectangle(width / 2, controlsPanelY, Math.min(width * 0.64, 760), 122, 0x152843, 1).setStrokeStyle(3, 0xc8a030);
 
     this.add
-      .text(width / 2, height * 0.6, ctaLabel, {
-        fontFamily: "Georgia, serif",
-        fontSize: "32px",
-        color: "#101522",
-      })
+      .text(
+        width / 2,
+        controlsPanelY,
+        "HOW TO MOVE\nWASD or Arrow Keys",
+        {
+          fontFamily: "Courier New, monospace",
+          fontSize: "22px",
+          color: "#f1f5ff",
+          stroke: "#0f1a2b",
+          strokeThickness: 3,
+          align: "center",
+          lineSpacing: 8,
+          wordWrap: {
+            width: width - SPACING.lg * 4,
+            useAdvancedWrap: true,
+          },
+        }
+      )
       .setOrigin(0.5);
 
+    const startPanelY = height * 0.78;
+    this.add.rectangle(width / 2, startPanelY, Math.min(width * 0.7, 820), 58, 0x2a0b10, 1).setStrokeStyle(3, 0xf6c453);
     this.add
-      .text(width / 2, height * 0.72, "Run the maze, collect at PASS, and serve seat orders", {
-        fontFamily: "Verdana, sans-serif",
+      .text(width / 2, startPanelY, startHint, {
+        fontFamily: "Courier New, monospace",
         fontSize: "18px",
-        color: "#b9c6dd",
+        color: "#fff0c7",
+        stroke: "#190509",
+        strokeThickness: 3,
       })
       .setOrigin(0.5);
 
-    this.add
-      .text(width / 2, height * 0.76, startHint, {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "15px",
-        color: "#f1f5ff",
-      })
-      .setOrigin(0.5);
-
-    this.add.rectangle(width / 2, height * 0.82, 470, 106, COLORS.panel).setStrokeStyle(2, COLORS.panelAlt);
-
-    this.add
-      .text(width / 2, height * 0.79, summary.primary, {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "16px",
-        color: "#f1f5ff",
-        align: "center",
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(width / 2, height * 0.85, summary.secondary, {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "14px",
-        color: "#b9c6dd",
-        align: "center",
-      })
-      .setOrigin(0.5);
+    const lightY = height * 0.88;
+    const lightGap = 34;
+    [-1, 0, 1].forEach((offset, index) => {
+      const palette = [0xc8a030, 0x59b9ff, 0xe45454][index];
+      this.add.rectangle(width / 2 + offset * lightGap, lightY, 14, 14, palette, 1).setStrokeStyle(2, 0x091422);
+      this.add.rectangle(width / 2 + offset * lightGap, lightY, 6, 6, 0xffffff, 0.28);
+    });
 
     this.onEnterKeyDown = this.onEnterKeyDown ?? this.handleStartInput.bind(this);
     this.onSpaceKeyDown = this.onSpaceKeyDown ?? this.handleStartInput.bind(this);
@@ -91,8 +104,6 @@ export class MenuScene extends Phaser.Scene {
     this.scale?.on?.("resize", this.onScaleResize, this);
 
     this.events?.once?.("shutdown", this.cleanupSceneSubscriptions, this);
-
-    this.add.rectangle(width / 2, height * 0.9, width - SPACING.lg * 2, 2, COLORS.panelAlt);
   }
 
   handleStartInput() {
@@ -112,25 +123,5 @@ export class MenuScene extends Phaser.Scene {
     this.input?.keyboard?.off?.("keydown-ENTER", this.onEnterKeyDown, this);
     this.input?.keyboard?.off?.("keydown-SPACE", this.onSpaceKeyDown, this);
     this.scale?.off?.("resize", this.onScaleResize, this);
-  }
-
-  resolveRoundSummary(data) {
-    if (!data || !data.reason) {
-      return {
-        hasRoundResult: false,
-        primary: "Last round: none yet",
-        secondary: "Start shift: timer, score, and deliveries reset to defaults",
-      };
-    }
-
-    const label = data.reasonLabel ?? data.reason;
-    const score = data.score ?? 0;
-    const delivered = data.delivered ?? 0;
-
-    return {
-      hasRoundResult: true,
-      primary: `Last round: ${label} | Score ${score} | Delivered ${delivered}`,
-      secondary: "Press RETRY to run the next shift",
-    };
   }
 }

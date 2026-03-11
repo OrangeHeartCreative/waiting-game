@@ -2,6 +2,8 @@
 
 Week 2 focuses on turning the scaffold into a stronger playable loop while keeping scene boundaries stable.
 
+Note: This checklist is archived as completed. Continue with `FINAL_TASKS_CHECKLIST.md` for release-candidate work.
+
 **Scope**
 - [x] Add baseline gameplay mechanics in `GameScene`.
 - [x] Replace placeholder transitions with real UI state handling.

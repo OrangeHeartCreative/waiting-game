@@ -113,6 +113,19 @@ function makeContainerObject() {
   };
 }
 
+function makeGraphicsObject() {
+  return {
+    fillStyle() {},
+    fillRect() {},
+    lineStyle() {},
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    strokePath() {},
+    strokeRect() {},
+  };
+}
+
 describe("foundation configuration", () => {
   it("keeps scene keys unique", () => {
     const keys = [BOOT_SCENE_KEY, PRELOAD_SCENE_KEY, MENU_SCENE_KEY, GAME_SCENE_KEY, SHIFT_COMPLETE_SCENE_KEY, DAY_COMPLETE_SCENE_KEY];
@@ -209,8 +222,8 @@ describe("scene flow smoke", () => {
     };
 
     scene.create();
-    expect(renderedText).toContain("START SHIFT");
-    expect(renderedText).toContain("Run the maze, collect at PASS, and serve seat orders");
+    expect(renderedText).toContain("Press ENTER or SPACE to start");
+    expect(renderedText).toContain("HOW TO MOVE\nWASD or Arrow Keys");
   });
 
   it("registers ESC transition from game to menu", () => {
@@ -236,6 +249,7 @@ describe("scene flow smoke", () => {
       container: () => makeContainerObject(),
       image: () => makeImageObject(),
     };
+    scene.add.graphics = () => makeGraphicsObject();
 
     scene.input = {
       keyboard: {
@@ -676,8 +690,9 @@ describe("scene flow smoke", () => {
 
     expect(scene.getLayoutIndexForDay(1)).toBe(0);
     expect(scene.getLayoutIndexForDay(2)).toBe(1);
-    expect(scene.getLayoutIndexForDay(3)).toBe(0);
+    expect(scene.getLayoutIndexForDay(3)).toBe(2);
     expect(scene.getLayoutIndexForDay(4)).toBe(1);
+    expect(scene.getLayoutIndexForDay(5)).toBe(0);
   });
 
   it("scales difficulty up from day 2 onward", () => {
@@ -689,7 +704,8 @@ describe("scene flow smoke", () => {
 
     expect(scene.getLayoutPlateGoalForDay(1)).toBe(10);
     expect(scene.getLayoutPlateGoalForDay(2)).toBe(15);
-    expect(scene.getLayoutPlateGoalForDay(6)).toBe(35);
+    expect(scene.getLayoutPlateGoalForDay(6)).toBe(32);
+    expect(scene.getLayoutPlateGoalForDay(8)).toBe(36);
 
     expect(scene.getRivalSpeedScaleForDay(1)).toBe(1);
     expect(scene.getRivalSpeedScaleForDay(2)).toBeCloseTo(1.05, 5);
@@ -817,6 +833,41 @@ describe("scene flow smoke", () => {
     });
   });
 
+  it("ShiftCompleteScene binds ENTER and SPACE to continue", () => {
+    const scene = new ShiftCompleteScene();
+    const keyboardListeners = {};
+    const startedKeys = [];
+
+    scene.init({ totalScore: 99, totalDelivered: 11, shiftLevel: 2, shiftNumber: 3 });
+    scene.scale = { width: 1280, height: 720, on: () => {}, off: () => {} };
+    scene.cameras = { main: { setBackgroundColor: () => {} } };
+    scene.scene = {
+      start: (key) => {
+        startedKeys.push(key);
+      },
+      restart: () => {},
+    };
+    scene.input = {
+      keyboard: {
+        on: (event, cb) => {
+          keyboardListeners[event] = cb;
+        },
+        off: () => {},
+      },
+    };
+    scene.events = { once: () => {} };
+    scene.add = {
+      text: () => makeTextObject(),
+      rectangle: () => makeRectObject(),
+    };
+
+    scene.create();
+    keyboardListeners["keydown-ENTER"]();
+    keyboardListeners["keydown-SPACE"]();
+
+    expect(startedKeys).toEqual([GAME_SCENE_KEY, GAME_SCENE_KEY]);
+  });
+
   it("DayCompleteScene startNextShift rolls to next day", () => {
     const scene = new DayCompleteScene();
     let startCall = null;
@@ -841,6 +892,41 @@ describe("scene flow smoke", () => {
         shiftNumber: 3,
       },
     });
+  });
+
+  it("DayCompleteScene binds ENTER and SPACE to continue", () => {
+    const scene = new DayCompleteScene();
+    const keyboardListeners = {};
+    const startedKeys = [];
+
+    scene.init({ totalScore: 120, totalDelivered: 14, shiftNumber: 4 });
+    scene.scale = { width: 1280, height: 720, on: () => {}, off: () => {} };
+    scene.cameras = { main: { setBackgroundColor: () => {} } };
+    scene.scene = {
+      start: (key) => {
+        startedKeys.push(key);
+      },
+      restart: () => {},
+    };
+    scene.input = {
+      keyboard: {
+        on: (event, cb) => {
+          keyboardListeners[event] = cb;
+        },
+        off: () => {},
+      },
+    };
+    scene.events = { once: () => {} };
+    scene.add = {
+      text: () => makeTextObject(),
+      rectangle: () => makeRectObject(),
+    };
+
+    scene.create();
+    keyboardListeners["keydown-ENTER"]();
+    keyboardListeners["keydown-SPACE"]();
+
+    expect(startedKeys).toEqual([GAME_SCENE_KEY, GAME_SCENE_KEY]);
   });
 
   it("applies a fair cooldowned penalty when player bumps a rival", () => {

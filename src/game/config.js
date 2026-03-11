@@ -9,7 +9,7 @@ export const gameConfig = {
   parent: "app",
   backgroundColor: "#0f1a2b",
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   scene: [BOOT_SCENE_KEY],

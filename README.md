@@ -2,6 +2,14 @@
 
 HTML5 game built with Phaser 3 and Vite.
 
+## Documentation Index
+
+- Current project overview: `README.md`
+- Week 1 archive: `WEEK1_CHECKLIST.md`
+- Week 2 archive: `WEEK2_CHECKLIST.md`
+- Last polish session archive: `NEXT_SESSION_CHECKLIST.md`
+- Final stretch plan: `FINAL_TASKS_CHECKLIST.md`
+
 ## Current Scope
 
 This repository currently provides a playable prototype on top of the Week 1 scaffold:
@@ -11,9 +19,10 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 	- Collect at `PASS` and deliver to the chef-announced, highlighted seat
 	- First chef callout waits 3 seconds, then each order timer starts only after the callout and movement toward `PASS`
 	- Per-order timer scales by day: starts at `30s`, decreases by `2.5s` per day, floored at `15s`
-	- Plate objective scales by day: starts at `10` deliveries and increases by `+5` per day
+	- Plate objective scales by day with taper: starts at `10`, increases by `+5` up to Day 6 pace, then tapers to `+2` per day
 	- Score gained from remaining time when a seat is served
 	- Total score is cumulative across shifts and days
+	- Round-start run card briefly shows `Day / Shift / Goal`
 	- Chef speech bubble callouts announce each target table/seat
 	- Cleared layouts route through `ShiftCompleteScene`; every completed day routes through `DayCompleteScene`
 - Rival waiter pressure system:
@@ -26,6 +35,11 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 	- Rival contact applies a `-1.5s` timer penalty on cooldown
 	- Rival body contact stuns rivals briefly to create escape windows
 	- Bumped rivals enter cooldown + recovery routing to reduce sticky lock-on behavior
+	- Rival/player contact now applies a small rival bounceback nudge to reduce sticky body overlap
+- Presentation and UI pass:
+	- Main menu, in-game HUD, and completion scenes use a stronger arcade/SNES-inspired visual treatment
+	- Completion scenes use framed card layouts and keyboard-forward continue prompts
+	- HUD remains black-backed in gameplay for maximum readability and layering clarity
 - Maze collision and movement tuning:
 	- Top/bottom/side boundary walls are collidable
 	- Kitchen/pass counter and table/seat colliders block movement
@@ -42,7 +56,7 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 	- `GameScene` sends completed days to `DayCompleteScene`
 	- `ShiftCompleteScene` continues to the next shift within the same day
 	- `DayCompleteScene` starts the next day on the alternate playfield layout
-	- Playfield layout alternates by day to reduce route memorization
+	- Playfield layout rotates on a non-repeating cadence across three variants
 	- Queue-linked activation:
 	- Internal queue progression drives the currently active seat target
 	- Queue generation is constrained to selected queue tables for each run
@@ -50,7 +64,10 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 - Manifest-driven visual placeholders:
 	- Placeholder sprites load from `src/assets/manifest.js` via `PreloadScene`
 	- `GameScene` consumes manifest keys (player/table placeholders)
+	- `plate` now uses an alternate placeholder asset to validate swap workflow
 	- Visual swaps can be done by changing manifest paths without scene rewrites
+- Balance instrumentation:
+	- Round-level snapshots log for days 1-10 with delivery pacing, bump count, and round-end reason
 - Lint/test/build baseline with scene smoke coverage
 
 ## Controls
@@ -115,7 +132,7 @@ Week 1 success criteria:
 ## Next Milestone
 
 Prototype polish and content expansion:
-1. Add at least one new layout variant and improve day-to-day layout cadence.
-2. Tune long-run difficulty curve (timer/goal/speed) for survivability targets.
-3. Add richer round modifiers/objectives beyond pure plate count.
-4. Keep manifest-driven art replacement flow for final assets.
+1. Execute `FINAL_TASKS_CHECKLIST.md` for release-candidate polish.
+2. Add richer round modifiers/objectives beyond pure plate count.
+3. Complete audio/UI icon pass and settings/pause UX.
+4. Run final QA gate (`lint`, `test`, `build`, long-run manual pass).

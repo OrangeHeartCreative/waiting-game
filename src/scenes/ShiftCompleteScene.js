@@ -4,6 +4,7 @@ import { SHIFT_COMPLETE_SCENE_KEY, GAME_SCENE_KEY, MENU_SCENE_KEY } from "./scen
 
 const LEVELS_PER_DAY = 3;
 const SHIFT_NAMES = ["Breakfast", "Lunch", "Dinner"];
+const GOLD_ACCENT = 13148208;
 
 export class ShiftCompleteScene extends Phaser.Scene {
   constructor() {
@@ -14,6 +15,8 @@ export class ShiftCompleteScene extends Phaser.Scene {
     this.shiftNumber = 1;
     this.shiftCount = 1;
     this.isDayComplete = false;
+    this.onNextShiftKeyDown = null;
+    this.onMenuKeyDown = null;
   }
 
   init(data) {
@@ -30,26 +33,49 @@ export class ShiftCompleteScene extends Phaser.Scene {
     const height = this.scale.height;
     this.cameras.main.setBackgroundColor(COLORS.background);
 
+    this.add.rectangle(width / 2, height / 2, width, height, 0x0f2038, 1).setOrigin(0.5, 0.5);
+    this.add.rectangle(width / 2, height / 2, width * 0.96, height * 0.9, 0x132742, 1).setStrokeStyle(4, GOLD_ACCENT);
+    for (let y = 38; y < height - 38; y += 18) {
+      this.add.rectangle(width / 2, y, width * 0.92, 2, 0x1b3352, 0.45);
+    }
+
+    const panelWidth = Math.min(width * 0.84, 980);
+    const panelHeight = Math.min(height * 0.66, 560);
+    const panelX = width / 2;
+    const panelY = height / 2;
+    const panelTop = panelY - panelHeight / 2;
+
+    this.add.rectangle(panelX + 6, panelY + 6, panelWidth, panelHeight, 0x050a13, 0.5);
+    this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x142238, 1).setStrokeStyle(4, GOLD_ACCENT);
+    this.add.rectangle(panelX, panelTop + 40, panelWidth - 10, 72, 0x2a0b10, 1).setStrokeStyle(2, GOLD_ACCENT);
+
+    this.add.rectangle(panelX - panelWidth / 2 + 34, panelTop + 40, 42, 42, 0x4c1120, 0.95).setStrokeStyle(2, GOLD_ACCENT);
+    this.add.rectangle(panelX + panelWidth / 2 - 34, panelTop + 40, 42, 42, 0x4c1120, 0.95).setStrokeStyle(2, GOLD_ACCENT);
+
     this.add
-      .text(width / 2, height * 0.22, `SHIFT ${this.shiftCount} COMPLETE`, {
-        fontFamily: "Georgia, serif",
+      .text(panelX, panelTop + 40, `SHIFT ${this.shiftCount} COMPLETE`, {
+        fontFamily: "Courier New, monospace",
         fontSize: "48px",
         color: "#f6c453",
+        stroke: "#21070b",
+        strokeThickness: 6,
       })
       .setOrigin(0.5);
 
     const shiftName = SHIFT_NAMES[(this.shiftLevel - 1) % SHIFT_NAMES.length];
     this.add
-      .text(width / 2, height * 0.34, `DAY ${this.shiftNumber}  —  ${shiftName}`, {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "22px",
+      .text(panelX, panelTop + 122, `DAY ${this.shiftNumber}  —  ${shiftName}`, {
+        fontFamily: "Courier New, monospace",
+        fontSize: "21px",
         color: "#b9c6dd",
+        stroke: "#0d1728",
+        strokeThickness: 3,
       })
       .setOrigin(0.5);
 
     if (this.isDayComplete) {
       this.add
-        .text(width / 2, height * 0.40, "DAY COMPLETE", {
+        .text(panelX, panelTop + 162, "DAY COMPLETE", {
           fontFamily: "Verdana, sans-serif",
           fontSize: "18px",
           color: "#ffe08a",
@@ -58,42 +84,64 @@ export class ShiftCompleteScene extends Phaser.Scene {
     }
 
     this.add
-      .text(width / 2, height * 0.46, `SCORE: ${this.totalScore}`, {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "36px",
-        color: "#f1f5ff",
-      })
-      .setOrigin(0.5);
+      .rectangle(panelX, panelTop + 230, panelWidth - 120, 72, 0x1a3152, 1)
+      .setStrokeStyle(2, 0x93b8ff);
 
     this.add
-      .text(width / 2, height * 0.56, `PLATES SERVED: ${this.totalDelivered}`, {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "22px",
-        color: "#b9c6dd",
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(width / 2, height * 0.7, "START NEXT SHIFT", {
-        fontFamily: "Georgia, serif",
+      .text(panelX, panelTop + 230, `SCORE: ${this.totalScore}`, {
+        fontFamily: "Courier New, monospace",
         fontSize: "32px",
+        color: "#f1f5ff",
+        stroke: "#0d1a30",
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5);
+
+    this.add.rectangle(panelX, panelTop + 302, panelWidth - 200, 54, 0x1a2a45, 1).setStrokeStyle(2, 0x4f6994);
+    this.add
+      .text(panelX, panelTop + 302, `PLATES SERVED: ${this.totalDelivered}`, {
+        fontFamily: "Courier New, monospace",
+        fontSize: "23px",
+        color: "#b9c6dd",
+        stroke: "#111d33",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5);
+
+    this.add.rectangle(panelX, panelTop + 406, panelWidth - 220, 56, 0x341019, 1).setStrokeStyle(3, GOLD_ACCENT);
+    this.add
+      .text(panelX, panelTop + 404, "START NEXT SHIFT", {
+        fontFamily: "Courier New, monospace",
+        fontSize: "30px",
         color: "#f6c453",
+        stroke: "#21070b",
+        strokeThickness: 4,
       })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, height * 0.82, "MAIN MENU", {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "18px",
+      .text(panelX, panelTop + 468, "ENTER / SPACE: CONTINUE   ·   ESC: MAIN MENU", {
+        fontFamily: "Courier New, monospace",
+        fontSize: "14px",
         color: "#6a7897",
+        stroke: "#0d1728",
+        strokeThickness: 2,
       })
       .setOrigin(0.5);
 
-    this.input?.keyboard?.on?.("keydown-SPACE", () => this.startNextShift());
-    this.input?.keyboard?.on?.("keydown-ESC", () => this.scene.start(MENU_SCENE_KEY));
+    this.onNextShiftKeyDown = this.onNextShiftKeyDown ?? this.startNextShift.bind(this);
+    this.onMenuKeyDown = this.onMenuKeyDown ?? (() => this.scene.start(MENU_SCENE_KEY));
+
+    this.input?.keyboard?.off?.("keydown-ENTER", this.onNextShiftKeyDown, this);
+    this.input?.keyboard?.off?.("keydown-SPACE", this.onNextShiftKeyDown, this);
+    this.input?.keyboard?.off?.("keydown-ESC", this.onMenuKeyDown, this);
+
+    this.input?.keyboard?.on?.("keydown-ENTER", this.onNextShiftKeyDown, this);
+    this.input?.keyboard?.on?.("keydown-SPACE", this.onNextShiftKeyDown, this);
+    this.input?.keyboard?.on?.("keydown-ESC", this.onMenuKeyDown, this);
 
     this.scale?.on?.("resize", this.handleScaleResize, this);
-    this.events?.once?.("shutdown", () => this.scale?.off?.("resize", this.handleScaleResize, this));
+    this.events?.once?.("shutdown", this.cleanupSceneSubscriptions, this);
   }
 
   handleScaleResize() {
@@ -113,5 +161,12 @@ export class ShiftCompleteScene extends Phaser.Scene {
       shiftDelivered: this.totalDelivered,
       shiftNumber: this.shiftNumber,
     });
+  }
+
+  cleanupSceneSubscriptions() {
+    this.input?.keyboard?.off?.("keydown-ENTER", this.onNextShiftKeyDown, this);
+    this.input?.keyboard?.off?.("keydown-SPACE", this.onNextShiftKeyDown, this);
+    this.input?.keyboard?.off?.("keydown-ESC", this.onMenuKeyDown, this);
+    this.scale?.off?.("resize", this.handleScaleResize, this);
   }
 }

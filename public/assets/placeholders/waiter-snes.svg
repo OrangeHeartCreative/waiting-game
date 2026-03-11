@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 16 24" shape-rendering="crispEdges" style="image-rendering:pixelated">
+  <!-- SNES-style Italian waiter: pixel art, 16x24 grid, 2px per pixel -->
+
+  <!-- Hair (rows 0-1) -->
+  <rect x="4" y="0" width="8" height="1" fill="#3A1A08"/>
+  <rect x="3" y="1" width="10" height="1" fill="#3A1A08"/>
+
+  <!-- Head outline + skin (rows 2-5): left/right outlines at col 2 and 13 -->
+  <rect x="2" y="2" width="1" height="4" fill="#3A1A08"/>
+  <rect x="3" y="2" width="10" height="4" fill="#DDA870"/>
+  <rect x="13" y="2" width="1" height="4" fill="#3A1A08"/>
+
+  <!-- Eyes (row 3) -->
+  <rect x="5" y="3" width="1" height="1" fill="#0A0808"/>
+  <rect x="10" y="3" width="1" height="1" fill="#0A0808"/>
+
+  <!-- Mouth line (row 5) -->
+  <rect x="6" y="5" width="4" height="1" fill="#8A2828"/>
+
+  <!-- Chin (row 6, narrower) -->
+  <rect x="3" y="6" width="1" height="1" fill="#3A1A08"/>
+  <rect x="4" y="6" width="8" height="1" fill="#DDA870"/>
+  <rect x="12" y="6" width="1" height="1" fill="#3A1A08"/>
+
+  <!-- White collar (row 7) -->
+  <rect x="5" y="7" width="6" height="1" fill="#F0F0F0"/>
+
+  <!-- Jacket sides (rows 8-12) -->
+  <rect x="1" y="8" width="4" height="5" fill="#0A1428"/>
+  <rect x="11" y="8" width="4" height="5" fill="#0A1428"/>
+
+  <!-- White shirt front (rows 8-12) -->
+  <rect x="5" y="8" width="6" height="5" fill="#F0F0F0"/>
+
+  <!-- Red bow tie (row 9) -->
+  <rect x="7" y="9" width="2" height="1" fill="#CC2020"/>
+
+  <!-- Gold waistcoat button row (row 12) -->
+  <rect x="7" y="12" width="2" height="1" fill="#C8A030"/>
+
+  <!-- Belt / lower jacket (row 13) -->
+  <rect x="1" y="13" width="14" height="1" fill="#080818"/>
+
+  <!-- Pants (rows 14-16) -->
+  <rect x="1" y="14" width="14" height="3" fill="#080E1E"/>
+
+  <!-- Legs (rows 17-21, gap at cols 7-8) -->
+  <rect x="1" y="17" width="6" height="5" fill="#080E1E"/>
+  <rect x="9" y="17" width="6" height="5" fill="#080E1E"/>
+
+  <!-- Shoes (rows 22-23, tips wider than leg) -->
+  <rect x="0" y="22" width="7" height="2" fill="#080808"/>
+  <rect x="9" y="22" width="7" height="2" fill="#080808"/>
+</svg>
