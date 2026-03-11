@@ -4,6 +4,8 @@ import {
   PRELOAD_SCENE_KEY,
   MENU_SCENE_KEY,
   GAME_SCENE_KEY,
+  SHIFT_COMPLETE_SCENE_KEY,
+  DAY_COMPLETE_SCENE_KEY,
 } from "../src/scenes/sceneKeys";
 import { BASE_WIDTH, BASE_HEIGHT } from "../src/game/constants";
 import { ASSET_MANIFEST } from "../src/assets/manifest";
@@ -25,12 +27,16 @@ let BootScene;
 let PreloadScene;
 let MenuScene;
 let GameScene;
+let ShiftCompleteScene;
+let DayCompleteScene;
 
 beforeAll(async () => {
   ({ BootScene } = await import("../src/scenes/BootScene"));
   ({ PreloadScene } = await import("../src/scenes/PreloadScene"));
   ({ MenuScene } = await import("../src/scenes/MenuScene"));
   ({ GameScene } = await import("../src/scenes/GameScene"));
+  ({ ShiftCompleteScene } = await import("../src/scenes/ShiftCompleteScene"));
+  ({ DayCompleteScene } = await import("../src/scenes/DayCompleteScene"));
 });
 
 function makeTextObject() {
@@ -109,7 +115,7 @@ function makeContainerObject() {
 
 describe("foundation configuration", () => {
   it("keeps scene keys unique", () => {
-    const keys = [BOOT_SCENE_KEY, PRELOAD_SCENE_KEY, MENU_SCENE_KEY, GAME_SCENE_KEY];
+    const keys = [BOOT_SCENE_KEY, PRELOAD_SCENE_KEY, MENU_SCENE_KEY, GAME_SCENE_KEY, SHIFT_COMPLETE_SCENE_KEY, DAY_COMPLETE_SCENE_KEY];
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -588,11 +594,15 @@ describe("scene flow smoke", () => {
     expect(rival.x).toBe(260);
   });
 
-  it("sends time-up payload to menu scene", () => {
+  it("routes layout clear to shift complete scene", () => {
     const scene = new GameScene();
     let delayedMs = 0;
     let startCall = null;
 
+    scene.shiftLevel = 1;
+    scene.shiftScore = 0;
+    scene.shiftDelivered = 0;
+    scene.shiftNumber = 1;
     scene.score = 42;
     scene.deliveredPlates = 7;
     scene.statusText = { setText: () => {} };
@@ -609,18 +619,100 @@ describe("scene flow smoke", () => {
       },
     };
 
-    scene.endRound("TIME_UP");
+    scene.endRound("LAYOUT_CLEAR");
 
     expect(delayedMs).toBe(550);
     expect(startCall).toEqual({
-      key: MENU_SCENE_KEY,
+      key: SHIFT_COMPLETE_SCENE_KEY,
       data: {
-        score: 42,
-        delivered: 7,
-        reason: "TIME_UP",
-        reasonLabel: "Game over (time up)",
+        totalScore: 42,
+        totalDelivered: 7,
+        shiftLevel: 1,
+        shiftNumber: 1,
+        isDayComplete: false,
       },
     });
+  });
+
+  it("marks day complete after level 3 layout clear", () => {
+    const scene = new GameScene();
+    let startCall = null;
+
+    scene.shiftLevel = 3;
+    scene.shiftScore = 100;
+    scene.shiftDelivered = 12;
+    scene.shiftNumber = 2;
+    scene.score = 42;
+    scene.deliveredPlates = 7;
+    scene.statusText = { setText: () => {} };
+    scene.feedbackText = { setText: () => {} };
+    scene.time = {
+      delayedCall: (_, callback) => {
+        callback();
+      },
+    };
+    scene.scene = {
+      start: (key, data) => {
+        startCall = { key, data };
+      },
+    };
+
+    scene.endRound("LAYOUT_CLEAR");
+
+    expect(startCall).toEqual({
+      key: DAY_COMPLETE_SCENE_KEY,
+      data: {
+        totalScore: 142,
+        totalDelivered: 19,
+        shiftLevel: 3,
+        shiftNumber: 2,
+        isDayComplete: true,
+      },
+    });
+  });
+
+  it("derives layout index from day number", () => {
+    const scene = new GameScene();
+
+    expect(scene.getLayoutIndexForDay(1)).toBe(0);
+    expect(scene.getLayoutIndexForDay(2)).toBe(1);
+    expect(scene.getLayoutIndexForDay(3)).toBe(0);
+    expect(scene.getLayoutIndexForDay(4)).toBe(1);
+  });
+
+  it("scales difficulty up from day 2 onward", () => {
+    const scene = new GameScene();
+
+    expect(scene.getRoundDurationSecondsForDay(1)).toBe(30);
+    expect(scene.getRoundDurationSecondsForDay(2)).toBe(27.5);
+    expect(scene.getRoundDurationSecondsForDay(6)).toBe(17.5);
+
+    expect(scene.getLayoutPlateGoalForDay(1)).toBe(10);
+    expect(scene.getLayoutPlateGoalForDay(2)).toBe(15);
+    expect(scene.getLayoutPlateGoalForDay(6)).toBe(35);
+
+    expect(scene.getRivalSpeedScaleForDay(1)).toBe(1);
+    expect(scene.getRivalSpeedScaleForDay(2)).toBeCloseTo(1.05, 5);
+    expect(scene.getRivalSpeedScaleForDay(6)).toBeCloseTo(1.25, 5);
+  });
+
+  it("keeps day loop continuous while increasing challenge", () => {
+    const scene = new GameScene();
+
+    const day7 = {
+      timer: scene.getRoundDurationSecondsForDay(7),
+      goal: scene.getLayoutPlateGoalForDay(7),
+      speedScale: scene.getRivalSpeedScaleForDay(7),
+    };
+    const day8 = {
+      timer: scene.getRoundDurationSecondsForDay(8),
+      goal: scene.getLayoutPlateGoalForDay(8),
+      speedScale: scene.getRivalSpeedScaleForDay(8),
+    };
+
+    expect(day8.timer).toBeLessThanOrEqual(day7.timer);
+    expect(day8.goal).toBeGreaterThan(day7.goal);
+    expect(day8.speedScale).toBeGreaterThan(day7.speedScale);
   });
 
   it("resets run state in init", () => {
@@ -639,16 +731,116 @@ describe("scene flow smoke", () => {
     expect(scene.remainingTime).toBe(30);
     expect(scene.deliveredPlates).toBe(0);
     expect(scene.score).toBe(0);
+    expect(scene.shiftLevel).toBe(1);
+    expect(scene.shiftScore).toBe(0);
+    expect(scene.shiftDelivered).toBe(0);
+    expect(scene.shiftNumber).toBe(1);
     expect(scene.carryingOrder).toBe(false);
     expect(scene.orderStage).toBe("needPickup");
     expect(scene.roundEnded).toBe(false);
     expect(scene.nextTargets).toEqual([]);
   });
 
-  it("maps time-up outcomes to tier labels", () => {
+  it("init reads shift data passed from scene start", () => {
     const scene = new GameScene();
 
-    expect(scene.buildRoundSummary("TIME_UP").label).toBe("Game over (time up)");
+    scene.init({
+      shiftLevel: 2,
+      shiftScore: 33,
+      shiftDelivered: 4,
+      shiftNumber: 7,
+    });
+
+    expect(scene.shiftLevel).toBe(2);
+    expect(scene.shiftScore).toBe(33);
+    expect(scene.shiftDelivered).toBe(4);
+    expect(scene.shiftNumber).toBe(7);
+  });
+
+  it("maps layout-clear outcomes to labels", () => {
+    const scene = new GameScene();
+
+    expect(scene.buildRoundSummary("LAYOUT_CLEAR", 1).label).toBe("Layout 1 complete");
+    expect(scene.buildRoundSummary("LAYOUT_CLEAR", 3).label).toBe("Layout 3 complete");
+  });
+
+  it("clears the layout after 10 delivered plates", () => {
+    const scene = new GameScene();
+    let endedReason = null;
+
+    scene.orderStage = "needSeat";
+    scene.carryingOrder = true;
+    scene.player = { x: 0, y: 0 };
+    scene.deliveredPlates = 9;
+    scene.remainingTime = 20;
+    scene.layoutPlateGoal = 10;
+    scene.score = 0;
+    scene.scoreText = { setText: () => {} };
+    scene.statusText = { setText: () => {} };
+    scene.setFeedback = () => {};
+    scene.findDeliverableSeat = () => ({ label: "A-1" });
+    scene.advanceTargetQueue = () => {};
+    scene.endRound = (reason) => {
+      endedReason = reason;
+    };
+
+    scene.handleInteractions();
+
+    expect(scene.deliveredPlates).toBe(10);
+    expect(endedReason).toBe("LAYOUT_CLEAR");
+  });
+
+  it("ShiftCompleteScene startNextShift advances level within same day", () => {
+    const scene = new ShiftCompleteScene();
+    let startCall = null;
+
+    scene.shiftLevel = 1;
+    scene.shiftNumber = 2;
+    scene.totalScore = 150;
+    scene.totalDelivered = 18;
+    scene.scene = {
+      start: (key, data) => {
+        startCall = { key, data };
+      },
+    };
+
+    scene.startNextShift();
+
+    expect(startCall).toEqual({
+      key: GAME_SCENE_KEY,
+      data: {
+        shiftLevel: 2,
+        shiftScore: 150,
+        shiftDelivered: 18,
+        shiftNumber: 2,
+      },
+    });
+  });
+
+  it("DayCompleteScene startNextShift rolls to next day", () => {
+    const scene = new DayCompleteScene();
+    let startCall = null;
+
+    scene.shiftNumber = 2;
+    scene.totalScore = 200;
+    scene.totalDelivered = 30;
+    scene.scene = {
+      start: (key, data) => {
+        startCall = { key, data };
+      },
+    };
+
+    scene.startNextShift();
+
+    expect(startCall).toEqual({
+      key: GAME_SCENE_KEY,
+      data: {
+        shiftLevel: 1,
+        shiftScore: 200,
+        shiftDelivered: 30,
+        shiftNumber: 3,
+      },
+    });
   });
 
   it("applies a fair cooldowned penalty when player bumps a rival", () => {
@@ -711,17 +903,16 @@ describe("scene flow smoke", () => {
     randomSpy.mockRestore();
   });
 
-  it("includes a bottom-left table in current layout", () => {
+  it("stops at table I as the last table in layout 1", () => {
     const scene = new GameScene();
     scene.mazeColumns = [100, 200, 300, 400, 500, 600, 700];
     scene.mazeRows = [100, 180, 260, 340, 420];
 
-    const tablePositions = scene.getCurrentLayoutTablePositions();
-    const bottomLeftTable = tablePositions.find((table) => table.label === "J");
+    const tablePositions = scene.getLayout1TablePositions();
+    const labels = tablePositions.map((t) => t.label);
 
-    expect(bottomLeftTable).toBeDefined();
-    expect(bottomLeftTable?.x).toBe(100);
-    expect(bottomLeftTable?.y).toBe(384);
+    expect(labels).not.toContain("J");
+    expect(labels.at(-1)).toBe("I");
   });
 
   it("uses a unique size variant for each table", () => {
@@ -737,11 +928,11 @@ describe("scene flow smoke", () => {
     const zones = scene.createTableZones();
     const signatures = zones.map((zone) => `${zone.variant.width}x${zone.variant.height}`);
 
-    expect(zones.length).toBe(10);
-    expect(new Set(signatures).size).toBe(10);
+    expect(zones.length).toBe(9);
+    expect(new Set(signatures).size).toBe(9);
   });
 
-  it("keeps the bottom-left table off arena walls", () => {
+  it("keeps all tables off arena walls", () => {
     const scene = new GameScene();
     scene.mazeColumns = [100, 200, 300, 400, 500, 600, 700];
     scene.mazeRows = [100, 180, 260, 340, 420];
@@ -752,11 +943,10 @@ describe("scene flow smoke", () => {
     };
 
     const zones = scene.createTableZones();
-    const bottomLeft = zones.find((zone) => zone.label === "J");
-
-    expect(bottomLeft).toBeDefined();
-    const bottomEdge = (bottomLeft?.y ?? 0) + (bottomLeft?.collider?.halfHeight ?? 0);
-    expect(bottomEdge).toBeLessThanOrEqual(498);
+    zones.forEach((zone) => {
+      const bottomEdge = zone.y + (zone.collider?.halfHeight ?? 0);
+      expect(bottomEdge).toBeLessThanOrEqual(498);
+    });
   });
 
   it("builds vertical-sweep behavior waypoints for center lane rivals", () => {
@@ -825,7 +1015,14 @@ describe("scene flow smoke", () => {
     };
 
     const spawn = scene.getPlayerSpawnPoint();
-    expect(spawn).toEqual({ x: 300, y: 80 });
+    const rivalStarts = scene.getRivalSpawnPoints();
+    const nearestRivalDistance = rivalStarts.reduce((best, rival) => {
+      const distance = Math.hypot(spawn.x - rival.x, spawn.y - rival.y);
+      return Math.min(best, distance);
+    }, Number.POSITIVE_INFINITY);
+
+    expect(scene.isSpawnPositionOpen(spawn)).toBe(true);
+    expect(nearestRivalDistance).toBeGreaterThanOrEqual(150);
   });
 
   it("falls back to an open maze spawn when preferred points are blocked", () => {
@@ -849,10 +1046,12 @@ describe("scene flow smoke", () => {
     expect(scene.isSpawnPositionOpen(spawn)).toBe(true);
   });
 
-  it("biases early spawn choices away from rival starts", () => {
+  it("biases spawn choices away from rival starts", () => {
     const scene = new GameScene();
     const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
 
+    scene.mazeColumns = [0, 100, 200, 300, 400];
+    scene.mazeRows = [0, 100, 200];
     scene.roundStartedAt = 1000;
     scene.time = { now: 1100 };
     scene.getPlayerSpawnCandidates = () => [
@@ -864,7 +1063,13 @@ describe("scene flow smoke", () => {
     scene.resolveTableCollision = (nextX, nextY) => ({ x: nextX, y: nextY });
 
     const spawn = scene.getPlayerSpawnPoint();
-    expect(spawn).toEqual({ x: 400, y: 0 });
+    const nearestRivalDistance = scene.getRivalSpawnPoints().reduce((best, rival) => {
+      const distance = Math.hypot(spawn.x - rival.x, spawn.y - rival.y);
+      return Math.min(best, distance);
+    }, Number.POSITIVE_INFINITY);
+
+    expect(spawn.x).toBe(400);
+    expect(nearestRivalDistance).toBeGreaterThanOrEqual(150);
 
     randomSpy.mockRestore();
   });
@@ -1086,17 +1291,26 @@ describe("scene flow smoke", () => {
     expect(open).toEqual({ x: 100, y: 120 });
   });
 
-  it("stuns rival bodies on contact instead of blocking player", () => {
+  it("blocks player movement into rivals and stuns them on contact", () => {
     const scene = new GameScene();
+    scene.assignNextRivalRouteTarget = vi.fn();
     scene.time = { now: 1000 };
     scene.rivals = [{ x: 100, y: 100, radius: 14, stunnedUntil: 0 }];
 
-    const passedThrough = scene.resolveRivalCollision(100, 100, 100, 150);
+    // Player tries to walk into the rival — should be pushed back to previous y.
+    const blocked = scene.resolveRivalCollision(100, 100, 100, 150);
+    // Player moves to a clear position — should pass through.
     const open = scene.resolveRivalCollision(160, 100, 100, 150);
+    scene.time.now = 1200;
+    const blockedAgain = scene.resolveRivalCollision(100, 100, 100, 150);
 
-    expect(passedThrough).toEqual({ x: 100, y: 100 });
+    expect(blocked).toEqual({ x: 100, y: 150 });
     expect(open).toEqual({ x: 160, y: 100 });
+    expect(blockedAgain).toEqual({ x: 100, y: 150 });
     expect(scene.rivals[0].stunnedUntil).toBeGreaterThan(1000);
+    expect(scene.rivals[0].stunnedUntil).toBe(1900);
+    expect(scene.rivals[0].bumpRecoveryActive).toBe(true);
+    expect(scene.assignNextRivalRouteTarget).toHaveBeenCalledTimes(1);
   });
 
   it("blocks pickup before chef announcement", () => {

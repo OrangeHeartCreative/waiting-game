@@ -4,6 +4,8 @@ Phaser + Vite + JavaScript foundation only. Gameplay mechanics are intentionally
 
 Note: This checklist is archived for Week 1 completion tracking. The current repository state has progressed beyond Week 1 and now includes playable delivery flow and rival AI behavior systems.
 Note: Current rival polish includes 4-direction patrol coverage, nearby buffered pursuit (without forced cut-off bumps), smoothed retargeting, and slower pacing.
+Note: Current progression flow now includes per-shift completion handoff (`GameScene -> ShiftCompleteScene`) plus a separate day rollover handoff (`GameScene -> DayCompleteScene`) every 3 cleared shifts.
+Note: Current day loop alternates layout by day and applies day-based difficulty scaling (timer down `2.5s/day` to a `15s` floor, plate goal up `+5/day`).
 
 **Scope**
 - [x] Include setup, scene architecture, placeholder visuals/UI, preload conventions, lint/test/build, and docs.

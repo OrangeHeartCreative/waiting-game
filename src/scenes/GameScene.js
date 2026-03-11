@@ -1,8 +1,17 @@
 import Phaser from "phaser";
 import { COLORS, SPACING } from "../ui/tokens";
-import { GAME_SCENE_KEY, MENU_SCENE_KEY } from "./sceneKeys";
+import { DAY_COMPLETE_SCENE_KEY, GAME_SCENE_KEY, MENU_SCENE_KEY, SHIFT_COMPLETE_SCENE_KEY } from "./sceneKeys";
 
 const ROUND_DURATION_SECONDS = 30;
+const LEVELS_PER_SHIFT = 3;
+const SHIFT_NAMES = ["Breakfast", "Lunch", "Dinner"];
+const FIRST_DAY_PLATE_GOAL = 10;
+const MIN_ROUND_DURATION_SECONDS = 15;
+const ROUND_DURATION_DECAY_PER_DAY = 2.5;
+const PLATE_GOAL_INCREASE_PER_DAY = 5;
+const RIVAL_SPEED_INCREASE_PER_DAY = 0.05;
+const PLAYER_SPAWN_COLLISION_RADIUS = 20;
+const PLAYER_SPAWN_TABLE_BUFFER = 4;
 const PLAYER_SPEED = 240;
 const INTERACTION_RADIUS = 34;
 const MIN_INTERACTION_RADIUS = 24;
@@ -15,6 +24,10 @@ const RIVAL_RADIUS = 14;
 const RIVAL_TIME_PENALTY_SECONDS = 1.5;
 const RIVAL_HIT_COOLDOWN_MS = 1400;
 const RIVAL_STUN_DURATION_MS = 900;
+const RIVAL_BUMP_COOLDOWN_MS = 1800;
+const RIVAL_BUMP_CHASE_LOCKOUT_MS = 2600;
+const IN_GAME_HINT_DURATION_MS = 1400;
+const IN_GAME_HINT_OFFSET_Y = 44;
 const RIVAL_STUCK_RECOVERY_THRESHOLD = 8;
 const RIVAL_HARD_RESET_THRESHOLD = 20;
 const RIVAL_STALL_MOVEMENT_EPSILON = 0.15;
@@ -62,9 +75,10 @@ const RIVAL_AGGRESSION_PROFILES = [
   { label: "steady", speedScale: 0.92, retargetScale: 1.15, playerInfluenceMin: 0.2, bumpImpulseScale: 0.88 },
   { label: "pressing", speedScale: 1, retargetScale: 1, playerInfluenceMin: 0.14, bumpImpulseScale: 1 },
   { label: "aggressive", speedScale: 1.06, retargetScale: 0.92, playerInfluenceMin: 0.1, bumpImpulseScale: 1.08 },
-  { label: "relentless", speedScale: 1.1, retargetScale: 0.82, playerInfluenceMin: 0.08, bumpImpulseScale: 1.12 },
+  // Raised playerInfluenceMin from 0.08 to 0.11 so the top-center diagonal rival
+  // only reacts to deliberate player motion rather than micro-movement jitter.
+  { label: "relentless", speedScale: 1.1, retargetScale: 0.82, playerInfluenceMin: 0.11, bumpImpulseScale: 1.12 },
 ];
-const PLAYER_SPAWN_SAFETY_WINDOW_MS = 1000;
 const PLAYER_SPAWN_SAFE_CHOICES = 4;
 const BOUNDARY_WALL_THICKNESS = 16;
 const CHEF_ANNOUNCE_DISPLAY_MS = 2400;
@@ -92,8 +106,14 @@ export class GameScene extends Phaser.Scene {
     this.resetRunState();
   }
 
-  init() {
+  init(data) {
     this.resetRunState();
+    if (data) {
+      this.shiftLevel = data.shiftLevel ?? 1;
+      this.shiftScore = data.shiftScore ?? 0;
+      this.shiftDelivered = data.shiftDelivered ?? 0;
+      this.shiftNumber = data.shiftNumber ?? 1;
+    }
   }
 
   resetRunState() {
@@ -124,8 +144,17 @@ export class GameScene extends Phaser.Scene {
     this.playerLastPosition = null;
     this.playerMotionVector = { x: 0, y: 0 };
     this.playerMotionStrength = 0;
+    this.hintText = null;
+    this.hintHideAt = 0;
+    this.lastHintMessage = "";
     this.returnToMenuEvent = null;
     this.onEscKeyDown = null;
+    this.layoutIndex = 0;
+    this.shiftLevel = 1;
+    this.shiftScore = 0;
+    this.shiftDelivered = 0;
+    this.shiftNumber = 1;
+    this.layoutPlateGoal = FIRST_DAY_PLATE_GOAL;
   }
 
   create() {
@@ -135,31 +164,32 @@ export class GameScene extends Phaser.Scene {
     const arenaTop = hudTop + hudHeight + 20;
     const arenaHeight = height - arenaTop - 60;
 
+    this.layoutPlateGoal = this.getLayoutPlateGoalForDay(this.shiftNumber);
+    this.remainingTime = this.getRoundDurationSecondsForDay(this.shiftNumber);
+
     this.cameras.main.setBackgroundColor(COLORS.background);
 
     this.add.rectangle(width / 2, hudTop, width - SPACING.lg, hudHeight, COLORS.panel).setOrigin(0.5, 0);
 
-    this.scoreText = this.add.text(SPACING.md, SPACING.lg, "SCORE: 0", {
+    this.scoreText = this.add.text(SPACING.md, SPACING.lg, `SCORE: ${this.getTotalScore()}`, {
       fontFamily: "Verdana, sans-serif",
       fontSize: "24px",
       color: "#f1f5ff",
     });
 
+    this.shiftLevelText = this.add.text(SPACING.md, hudTop + 44, this.formatShiftLabel(), {
+      fontFamily: "Verdana, sans-serif",
+      fontSize: "13px",
+      color: "#b9c6dd",
+    });
+
     this.timerText = this.add
-      .text(width / 2, SPACING.lg, `TIMER: ${this.formatTime(ROUND_DURATION_SECONDS)}`, {
+      .text(width / 2, SPACING.lg, `TIMER: ${this.formatTime(this.remainingTime)}`, {
         fontFamily: "Verdana, sans-serif",
         fontSize: "24px",
         color: "#f1f5ff",
       })
       .setOrigin(0.5, 0);
-
-    this.statusText = this.add
-      .text(width - SPACING.md, SPACING.lg, "STATUS: PICKUP", {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "24px",
-        color: "#f1f5ff",
-      })
-      .setOrigin(1, 0);
 
     this.arenaBounds = {
       minX: SPACING.lg,
@@ -203,6 +233,7 @@ export class GameScene extends Phaser.Scene {
       radius: RIVAL_PASS_NO_GO_RADIUS,
     };
 
+    this.layoutIndex = this.getLayoutIndexForDay(this.shiftNumber);
     this.tableZones = this.createTableZones();
     this.tableColliders = this.tableZones.map((zone) => zone.collider);
     this.rivalPatrolNoGoColliders = this.createRivalPatrolNoGoColliders();
@@ -220,16 +251,17 @@ export class GameScene extends Phaser.Scene {
     this.player = this.createPlayerVisual(spawnPoint.x, spawnPoint.y);
     this.playerLastPosition = { x: this.player.x, y: this.player.y };
 
+    this.hintText = this.add.text(spawnPoint.x, spawnPoint.y - IN_GAME_HINT_OFFSET_Y, "", {
+      fontFamily: "Verdana, sans-serif",
+      fontSize: "16px",
+      color: "#f6c453",
+    });
+    this.hintText.setOrigin?.(0.5);
+    this.hintText.setDepth?.(10);
+    this.hintText.setAlpha?.(0);
+
     this.nextTargets = this.createInitialSeatQueue(NEXT_QUEUE_LENGTH);
     this.scheduleNextTargetAnnouncement();
-
-    this.feedbackText = this.add
-      .text(width / 2, height - 72, "WAIT FOR CHEF CALLOUT", {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "18px",
-        color: "#f6c453",
-      })
-      .setOrigin(0.5);
 
     this.add
       .text(
@@ -309,7 +341,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.scene.restart();
+    this.scene.restart({
+      shiftLevel: this.shiftLevel,
+      shiftScore: this.shiftScore,
+      shiftDelivered: this.shiftDelivered,
+      shiftNumber: this.shiftNumber,
+    });
   }
 
   update(_, delta) {
@@ -319,11 +356,13 @@ export class GameScene extends Phaser.Scene {
 
     const dt = delta / 1000;
     this.updateTimer(dt);
+    this.updateHintText();
     if (this.roundEnded) {
       return;
     }
 
     this.handleMovement(dt);
+    this.updateHintText();
     this.updatePlayerMotionIntent(dt);
     this.tryStartOrderTimer();
     if (this.roundEnded) {
@@ -433,12 +472,26 @@ export class GameScene extends Phaser.Scene {
 
     if (collidedRival) {
       const now = this.time?.now ?? Date.now();
-      if (!collidedRival.stunnedUntil || now >= collidedRival.stunnedUntil) {
+      const bumpCooldownUntil = collidedRival.bumpCooldownUntil ?? 0;
+      if (now >= bumpCooldownUntil) {
         collidedRival.stunnedUntil = now + RIVAL_STUN_DURATION_MS;
+        collidedRival.bumpCooldownUntil = now + RIVAL_BUMP_COOLDOWN_MS;
+        collidedRival.bumpChaseLockoutUntil = now + RIVAL_BUMP_CHASE_LOCKOUT_MS;
+        collidedRival.bumpRecoveryActive = true;
+        collidedRival.isInterceptingPlayer = false;
+        collidedRival.nextInterceptionRetargetAt = 0;
+        this.assignNextRivalRouteTarget(collidedRival, true);
       }
     }
 
-    return { x: nextX, y: nextY };
+    const rivalColliders = this.rivals.map((rival) => ({
+      type: "circle",
+      x: rival.x,
+      y: rival.y,
+      radius: rival.radius,
+    }));
+
+    return this.resolveCollisionAgainstColliders(nextX, nextY, previousX, previousY, rivalColliders, bodyRadius);
   }
 
   resolveTableCollision(nextX, nextY, previousX, previousY, bodyRadius = 14) {
@@ -530,7 +583,6 @@ export class GameScene extends Phaser.Scene {
     ) {
       this.carryingOrder = true;
       this.orderStage = "needSeat";
-      this.statusText?.setText("STATUS: DELIVERY");
       this.setFeedback(`DELIVER ${this.getCurrentTargetSeatLabel()}`);
       this.setPassPickupAvailability(false);
       return;
@@ -547,9 +599,14 @@ export class GameScene extends Phaser.Scene {
       this.deliveredPlates += 1;
       const earnedScore = Math.ceil(this.remainingTime);
       this.score += earnedScore;
-      this.scoreText?.setText(`SCORE: ${this.score}`);
-      this.statusText?.setText(`STATUS: SERVING (${this.deliveredPlates})`);
+      this.scoreText?.setText(`SCORE: ${this.getTotalScore()}`);
       this.setFeedback(`SERVED ${targetSeat.label} (+${earnedScore})`);
+
+      if (this.deliveredPlates >= this.layoutPlateGoal) {
+        this.endRound("LAYOUT_CLEAR");
+        return;
+      }
+
       this.advanceTargetQueue(targetSeat.label);
     }
   }
@@ -606,7 +663,11 @@ export class GameScene extends Phaser.Scene {
           this.assignNextRivalRouteTarget(rival, true);
         }
 
-        if (!rival.routeTarget || this.isRivalAtRouteTarget(rival, rival.routeTarget)) {
+        if (rival.bumpRecoveryActive && rival.routeTarget && this.isRivalAtRouteTarget(rival, rival.routeTarget)) {
+          rival.bumpRecoveryActive = false;
+          rival.nextInterceptionRetargetAt = 0;
+          this.assignNextRivalRouteTarget(rival, true);
+        } else if (!rival.routeTarget || this.isRivalAtRouteTarget(rival, rival.routeTarget)) {
           this.assignNextRivalRouteTarget(rival, false);
         }
       }
@@ -802,6 +863,11 @@ export class GameScene extends Phaser.Scene {
 
   getRivalPlayerInterceptionTarget(rival) {
     if (!this.player || !this.arenaBounds || !rival) {
+      return null;
+    }
+
+    const now = this.time?.now ?? Date.now();
+    if (rival.bumpRecoveryActive || now < (rival.bumpChaseLockoutUntil ?? 0)) {
       return null;
     }
 
@@ -1058,6 +1124,53 @@ export class GameScene extends Phaser.Scene {
     }, null);
   }
 
+  getRivalBumpRecoveryWaypoint(rival, excludedWaypoint) {
+    if (!rival || !this.player) {
+      return this.getRivalDynamicFallbackWaypoint(rival, excludedWaypoint);
+    }
+
+    const minTravelDistance = RIVAL_ROUTE_REACH_DISTANCE * 1.75;
+    const uniqueCandidates = [];
+    const pushUnique = (point) => {
+      if (!point) {
+        return;
+      }
+      const exists = uniqueCandidates.some((candidate) =>
+        Math.abs(candidate.x - point.x) < 1 && Math.abs(candidate.y - point.y) < 1
+      );
+      if (!exists) {
+        uniqueCandidates.push(point);
+      }
+    };
+
+    (this.getRivalLaneDetourNodes(rival) ?? []).forEach(pushUnique);
+    (this.getRivalRouteNodes(rival) ?? []).forEach(pushUnique);
+
+    const travelCandidates = uniqueCandidates.filter((point) => {
+      if (excludedWaypoint && Math.abs(point.x - excludedWaypoint.x) < 1 && Math.abs(point.y - excludedWaypoint.y) < 1) {
+        return false;
+      }
+
+      const distance = Phaser.Math.Distance.Between(rival.x, rival.y, point.x, point.y);
+      return distance >= minTravelDistance;
+    });
+
+    if (!travelCandidates.length) {
+      return this.getRivalDynamicFallbackWaypoint(rival, excludedWaypoint);
+    }
+
+    return travelCandidates
+      .map((candidate) => {
+        const playerDistance = Phaser.Math.Distance.Between(candidate.x, candidate.y, this.player.x, this.player.y);
+        const rivalDistance = Phaser.Math.Distance.Between(candidate.x, candidate.y, rival.x, rival.y);
+        return {
+          candidate,
+          score: playerDistance * 1.6 + rivalDistance * 0.35 + Math.random() * 6,
+        };
+      })
+      .sort((a, b) => b.score - a.score)[0]?.candidate ?? null;
+  }
+
   selectRivalTravelTarget(rival, preferredWaypoint) {
     if (!preferredWaypoint) {
       return null;
@@ -1129,6 +1242,22 @@ export class GameScene extends Phaser.Scene {
 
   assignNextRivalRouteTarget(rival, forceRetarget) {
     const now = this.time?.now ?? Date.now();
+
+    if (rival.bumpRecoveryActive) {
+      const recoveryWaypoint = this.getRivalBumpRecoveryWaypoint(rival, rival.routeTarget);
+      if (recoveryWaypoint) {
+        rival.routeTarget = { x: recoveryWaypoint.x, y: recoveryWaypoint.y };
+        rival.routeHistory = rival.routeHistory ?? [];
+        rival.routeHistory.unshift({ x: recoveryWaypoint.x, y: recoveryWaypoint.y });
+        rival.routeHistory = rival.routeHistory.slice(0, RIVAL_ROUTE_HISTORY_SIZE);
+        const retargetScale = rival.retargetScale ?? RIVAL_DEFAULT_RETARGET_SCALE;
+        rival.nextTurnAt = now + Math.round(
+          Phaser.Math.Between(RIVAL_ROUTE_RETARGET_MIN_MS, RIVAL_ROUTE_RETARGET_MAX_MS) * retargetScale
+        );
+        return;
+      }
+    }
+
     const nextWaypoint = this.getNextBehaviorWaypoint(rival, forceRetarget);
     if (!nextWaypoint) {
       const routed = this.assignRivalPatrolRoute(rival, true);
@@ -1594,6 +1723,11 @@ export class GameScene extends Phaser.Scene {
 
     const playerRadius = 14;
     const hitRival = this.rivals.some((rival) => {
+      // Stunned rivals are temporarily incapacitated; exclude them so the player
+      // has a clean escape window for the full stun duration.
+      if (rival.stunnedUntil && now < rival.stunnedUntil) {
+        return false;
+      }
       const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, rival.x, rival.y);
       return distance < rival.radius + playerRadius;
     });
@@ -1711,19 +1845,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   createInitialSeatQueue(length) {
-    const seatPool = this.getSeatLabelPool();
     const queue = [];
-
     while (queue.length < length) {
-      const shuffled = this.shuffleLabels(seatPool);
-      for (const seatLabel of shuffled) {
-        queue.push(seatLabel);
-        if (queue.length >= length) {
-          break;
-        }
-      }
+      const label = this.pickRandomSeatFromPool();
+      if (label) queue.push(label);
     }
-
     return queue;
   }
 
@@ -1756,6 +1882,26 @@ export class GameScene extends Phaser.Scene {
       .map((seat) => seat.label);
   }
 
+  // Pick a random seat label with uniform probability per table.
+  // Grouping by table first avoids bias toward tables with more surviving seats.
+  pickRandomSeatFromPool() {
+    const pool = this.getSeatLabelPool();
+    if (pool.length === 0) return null;
+
+    const byTable = new Map();
+    for (const label of pool) {
+      const tableLabel = label.slice(0, -1);
+      const group = byTable.get(tableLabel) ?? [];
+      group.push(label);
+      byTable.set(tableLabel, group);
+    }
+
+    const tableKeys = [...byTable.keys()];
+    const chosenTable = tableKeys[Math.floor(Math.random() * tableKeys.length)];
+    const seats = byTable.get(chosenTable);
+    return seats[Math.floor(Math.random() * seats.length)];
+  }
+
   updateSeatActivationFromQueue() {
     const activeSeat = this.announcedTargetSeatLabel;
 
@@ -1780,10 +1926,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.nextTargets.shift();
-    const seatPool = this.getSeatLabelPool();
-    this.nextTargets.push(seatPool[Math.floor(Math.random() * seatPool.length)]);
+    const nextSeat = this.pickRandomSeatFromPool();
+    if (nextSeat) this.nextTargets.push(nextSeat);
 
-    this.remainingTime = ROUND_DURATION_SECONDS;
+    this.remainingTime = this.getRoundDurationSecondsForDay(this.shiftNumber);
     this.timerText?.setText(`TIMER: ${this.formatTime(this.remainingTime)}`);
     this.orderAnnouncementActive = false;
     this.orderTimerRunning = false;
@@ -1866,7 +2012,6 @@ export class GameScene extends Phaser.Scene {
     this.orderTimerRunning = false;
     this.setPassPickupAvailability(true);
     this.updateSeatActivationFromQueue();
-    this.setFeedback("COLLECT ORDER AT PASS");
 
     const tableLabel = seatLabel.slice(0, 1);
     const seatNumber = seatLabel.slice(1);
@@ -1930,8 +2075,31 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  setFeedback(message) {
-    this.feedbackText?.setText(message);
+  setFeedback(message, durationMs = IN_GAME_HINT_DURATION_MS) {
+    if (!message || !this.hintText) {
+      return;
+    }
+
+    this.lastHintMessage = message;
+    this.hintHideAt = (this.time?.now ?? Date.now()) + durationMs;
+    this.hintText.setText?.(message);
+    this.hintText.setAlpha?.(1);
+    this.updateHintText();
+  }
+
+  updateHintText() {
+    if (!this.hintText) {
+      return;
+    }
+
+    if (this.player) {
+      this.hintText.setPosition?.(this.player.x, this.player.y - IN_GAME_HINT_OFFSET_Y);
+    }
+
+    const now = this.time?.now ?? Date.now();
+    if (now >= (this.hintHideAt ?? 0)) {
+      this.hintText.setAlpha?.(0);
+    }
   }
 
   tryStartOrderTimer() {
@@ -1964,35 +2132,82 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const summary = this.buildRoundSummary(reason);
+    const totalScore = this.shiftScore + this.score;
+    const totalDelivered = this.shiftDelivered + this.deliveredPlates;
+    const isLayoutComplete = reason === "LAYOUT_CLEAR";
+    const isLastLevelInDay = this.shiftLevel >= LEVELS_PER_SHIFT;
+    const summary = this.buildRoundSummary(reason, this.shiftLevel);
     this.roundEnded = true;
-    this.statusText?.setText(`STATUS: ${summary.status}`);
-    this.setFeedback(summary.banner);
+    this.setFeedback(summary.banner, 900);
 
     if (this.returnToMenuEvent?.remove) {
       this.returnToMenuEvent.remove(false);
       this.returnToMenuEvent = null;
     }
 
+    if (isLayoutComplete) {
+      this.returnToMenuEvent = this.time.delayedCall(550, () => {
+        this.returnToMenuEvent = null;
+        this.scene.start(isLastLevelInDay ? DAY_COMPLETE_SCENE_KEY : SHIFT_COMPLETE_SCENE_KEY, {
+          totalScore,
+          totalDelivered,
+          shiftLevel: this.shiftLevel,
+          shiftNumber: this.shiftNumber,
+          isDayComplete: isLastLevelInDay,
+        });
+      });
+      return;
+    }
+
     this.returnToMenuEvent = this.time.delayedCall(550, () => {
       this.returnToMenuEvent = null;
       this.scene.start(MENU_SCENE_KEY, {
-        score: this.score,
-        delivered: this.deliveredPlates,
+        score: totalScore,
+        delivered: totalDelivered,
         reason: summary.code,
         reasonLabel: summary.label,
       });
     });
   }
 
-  buildRoundSummary(reasonCode) {
-    if (reasonCode === "TIME_UP") {
-      return {
-        code: reasonCode,
-        label: "Game over (time up)",
-        status: "GAME OVER",
-        banner: "GAME OVER",
-      };
+  formatShiftLabel() {
+    const shiftName = SHIFT_NAMES[(this.shiftLevel - 1) % SHIFT_NAMES.length];
+    return `DAY ${this.shiftNumber}  —  ${shiftName}`;
+  }
+
+  getLayoutIndexForDay(dayNumber) {
+    return Math.max(0, (Math.max(1, dayNumber) - 1) % 2);
+  }
+
+  getDayDifficultyStep(dayNumber = this.shiftNumber) {
+    return Math.max(0, (dayNumber ?? 1) - 1);
+  }
+
+  getRoundDurationSecondsForDay(dayNumber = this.shiftNumber) {
+    const step = this.getDayDifficultyStep(dayNumber);
+    return Math.max(MIN_ROUND_DURATION_SECONDS, ROUND_DURATION_SECONDS - step * ROUND_DURATION_DECAY_PER_DAY);
+  }
+
+  getLayoutPlateGoalForDay(dayNumber = this.shiftNumber) {
+    const step = this.getDayDifficultyStep(dayNumber);
+    return FIRST_DAY_PLATE_GOAL + step * PLATE_GOAL_INCREASE_PER_DAY;
+  }
+
+  getRivalSpeedScaleForDay(dayNumber = this.shiftNumber) {
+    const step = this.getDayDifficultyStep(dayNumber);
+    return 1 + step * RIVAL_SPEED_INCREASE_PER_DAY;
+  }
+
+  getTotalScore() {
+    return this.shiftScore + this.score;
+  }
+
+  buildRoundSummary(reasonCode, shiftLevel) {
+    if (reasonCode === "LAYOUT_CLEAR") {
+      const level = shiftLevel ?? this.shiftLevel;
+      const label = `Layout ${level} complete`;
+      const banner = `LAYOUT ${level} CLEAR`;
+      return { code: reasonCode, label, status: banner, banner };
     }
 
     if (reasonCode === "HAZARD_HIT") {
@@ -2060,6 +2275,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   getCurrentLayoutTablePositions() {
+    return this.layoutIndex === 1
+      ? this.getLayout2TablePositions()
+      : this.getLayout1TablePositions();
+  }
+
+  // Layout 1 (default): dense upper half with open lower lanes.
+  getLayout1TablePositions() {
     return [
       { label: "A", x: this.mazeColumns[0], y: this.mazeRows[1] },
       { label: "B", x: this.mazeColumns[2], y: this.mazeRows[1] },
@@ -2070,8 +2292,23 @@ export class GameScene extends Phaser.Scene {
       { label: "G", x: this.mazeColumns[5], y: this.mazeRows[2] },
       { label: "H", x: this.mazeColumns[2], y: this.mazeRows[3] },
       { label: "I", x: this.mazeColumns[4], y: this.mazeRows[3] },
-      // Bottom-left density boost while preserving open lanes near PASS.
-      { label: "J", x: this.mazeColumns[0], y: this.mazeRows[3] + (this.mazeRows[4] - this.mazeRows[3]) * 0.55 },
+    ];
+  }
+
+  // Layout 2: wide upper flanks with open center corridor and symmetric lower spread.
+  // Creates three clear vertical lanes through the mid-field, shifting rival
+  // traffic pressure compared to layout 1.
+  getLayout2TablePositions() {
+    return [
+      { label: "A", x: this.mazeColumns[1], y: this.mazeRows[1] },
+      { label: "B", x: this.mazeColumns[5], y: this.mazeRows[1] },
+      { label: "C", x: this.mazeColumns[0], y: this.mazeRows[2] },
+      { label: "D", x: this.mazeColumns[2], y: this.mazeRows[2] },
+      { label: "E", x: this.mazeColumns[4], y: this.mazeRows[2] },
+      { label: "F", x: this.mazeColumns[6], y: this.mazeRows[2] },
+      { label: "G", x: this.mazeColumns[1], y: this.mazeRows[3] },
+      { label: "H", x: this.mazeColumns[3], y: this.mazeRows[3] },
+      { label: "I", x: this.mazeColumns[5], y: this.mazeRows[3] },
     ];
   }
 
@@ -2176,8 +2413,13 @@ export class GameScene extends Phaser.Scene {
     ];
   }
 
-  isSpawnPositionOpen(point) {
-    const resolved = this.resolveTableCollision(point.x, point.y, point.x, point.y, 14);
+  isSpawnPositionOpen(point, bodyRadius = PLAYER_SPAWN_COLLISION_RADIUS + PLAYER_SPAWN_TABLE_BUFFER) {
+    // Use an offset previous position so the resolver can distinguish blocked from open.
+    // Passing the same coords for next and prev always returns prev on a block,
+    // making every position incorrectly appear open.
+    const prevX = point.x - bodyRadius * 3;
+    const prevY = point.y - bodyRadius * 3;
+    const resolved = this.resolveTableCollision(point.x, point.y, prevX, prevY, bodyRadius);
     return resolved.x === point.x && resolved.y === point.y;
   }
 
@@ -2190,38 +2432,42 @@ export class GameScene extends Phaser.Scene {
   }
 
   getPlayerSpawnPoint() {
-    const openCandidates = this.getPlayerSpawnCandidates().filter((candidate) => this.isSpawnPositionOpen(candidate));
-
-    if (openCandidates.length === 0) {
-      const backupCandidates = this.getOpenSpawnPointsFromMazeIntersections();
-      if (backupCandidates.length > 0) {
-        const shuffledBackup = this.shuffleDirections(backupCandidates);
-        return shuffledBackup[0];
+    const preferredCandidates = this.getPlayerSpawnCandidates();
+    const backupCandidates = this.getOpenSpawnPointsFromMazeIntersections();
+    const seen = new Set();
+    const mergedCandidates = [...preferredCandidates, ...backupCandidates].filter((candidate) => {
+      const key = `${candidate.x},${candidate.y}`;
+      if (seen.has(key)) {
+        return false;
       }
+      seen.add(key);
+      return true;
+    });
 
+    const openCandidates = mergedCandidates.filter((candidate) => this.isSpawnPositionOpen(candidate));
+    if (openCandidates.length === 0) {
       return { x: this.mazeColumns[1], y: this.mazeRows[1] };
     }
 
-    const now = this.time?.now ?? Date.now();
-    if (now - this.roundStartedAt < PLAYER_SPAWN_SAFETY_WINDOW_MS) {
-      const rivalStarts = this.getRivalSpawnPoints();
-      const ranked = [...openCandidates]
-        .map((candidate) => {
-          const nearestRivalDistance = rivalStarts.reduce((best, rival) => {
-            const distance = Phaser.Math.Distance.Between(candidate.x, candidate.y, rival.x, rival.y);
-            return Math.min(best, distance);
-          }, Number.POSITIVE_INFINITY);
+    const rivalStarts = this.getRivalSpawnPoints();
+    const ranked = openCandidates
+      .map((candidate) => {
+        const nearestRivalDistance = rivalStarts.reduce((best, rival) => {
+          const distance = Phaser.Math.Distance.Between(candidate.x, candidate.y, rival.x, rival.y);
+          return Math.min(best, distance);
+        }, Number.POSITIVE_INFINITY);
+        return { candidate, nearestRivalDistance };
+      })
+      .sort((a, b) => b.nearestRivalDistance - a.nearestRivalDistance);
 
-          return { candidate, nearestRivalDistance };
-        })
-        .sort((a, b) => b.nearestRivalDistance - a.nearestRivalDistance);
-
-      const preferred = ranked.slice(0, Math.min(PLAYER_SPAWN_SAFE_CHOICES, ranked.length)).map((entry) => entry.candidate);
-      return preferred[Math.floor(Math.random() * preferred.length)];
+    const stronglySafe = ranked.filter((entry) => entry.nearestRivalDistance >= RIVAL_SPAWN_PLAYER_SAFE_DISTANCE);
+    if (stronglySafe.length > 0) {
+      const pickPool = stronglySafe.slice(0, Math.min(PLAYER_SPAWN_SAFE_CHOICES, stronglySafe.length));
+      return pickPool[Math.floor(Math.random() * pickPool.length)].candidate;
     }
 
-    const shuffled = this.shuffleDirections(openCandidates);
-    return shuffled[0];
+    // If no candidate clears the ideal rival distance, still pick the farthest open point.
+    return ranked[0].candidate;
   }
 
   getRivalSpawnPoints() {
@@ -2534,6 +2780,9 @@ export class GameScene extends Phaser.Scene {
         routeVariance: 0.35 + Math.random() * 0.7,
         lastPatternBreakAt: -Infinity,
         stunnedUntil: 0,
+        bumpCooldownUntil: 0,
+        bumpChaseLockoutUntil: 0,
+        bumpRecoveryActive: false,
         patrolTableLabel: null,
         patrolWaypoints: [],
         patrolWaypointIndex: 0,
@@ -2548,7 +2797,7 @@ export class GameScene extends Phaser.Scene {
 
       const profile = this.getRivalAggressionProfile(index);
       rival.aggressionLabel = profile.label;
-      rival.moveSpeed = Math.round(RIVAL_SPEED * profile.speedScale);
+      rival.moveSpeed = Math.round(RIVAL_SPEED * profile.speedScale * this.getRivalSpeedScaleForDay(this.shiftNumber));
       rival.retargetScale = profile.retargetScale;
       rival.playerInfluenceMin = profile.playerInfluenceMin;
       rival.bumpImpulseScale = profile.bumpImpulseScale;
