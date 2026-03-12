@@ -111,6 +111,29 @@ This repository currently provides a playable v1.0.0 release on top of the Week 
 - `npm run preview` - Preview production bundle locally
 - `npm run lint` - Lint JavaScript source files
 - `npm run test` - Run smoke tests
+- `npm run capture:screenshots` - Capture an itch.io screenshot pack (requires dev server running)
+
+## Itch.io Screenshot Pack
+
+Automated screenshot capture is available for store-ready images.
+
+1. Start the game server:
+	- `npm run dev`
+2. In a second terminal, run:
+	- `npm run capture:screenshots`
+3. Output files are written to:
+	- `marketing/itchio-screenshots/`
+
+Generated filenames:
+1. `01-main-menu.png`
+2. `02-how-to-play.png`
+3. `03-settings.png`
+4. `04-gameplay-hud.png`
+5. `05-pause-menu.png`
+6. `06-gameplay-action.png`
+
+Optional: set a custom target URL if needed:
+- `SCREENSHOT_URL=http://127.0.0.1:5173 npm run capture:screenshots`
 
 ## Structure
 
