@@ -27,53 +27,62 @@ async function captureCanvas(page, filename) {
 async function main() {
   await ensureDir(OUTPUT_DIR);
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    viewport: VIEWPORT,
-    deviceScaleFactor: 1,
-  });
+  let browser;
+  let outputs = [];
 
-  const page = await context.newPage();
-  await page.goto(TARGET_URL, { waitUntil: "networkidle" });
-  await page.waitForLoadState("domcontentloaded");
-  await wait(1400);
+  try {
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({
+      viewport: VIEWPORT,
+      deviceScaleFactor: 1,
+    });
 
-  const outputs = [];
+    const page = await context.newPage();
+    await page.goto(TARGET_URL, { waitUntil: "networkidle" });
+    await page.waitForLoadState("domcontentloaded");
+    await wait(1400);
 
-  outputs.push(await captureCanvas(page, "01-main-menu.png"));
+    outputs.push(await captureCanvas(page, "01-main-menu.png"));
 
-  await page.keyboard.press("h");
-  await wait(500);
-  outputs.push(await captureCanvas(page, "02-how-to-play.png"));
+    await page.keyboard.press("h");
+    await wait(500);
+    outputs.push(await captureCanvas(page, "02-how-to-play.png"));
 
-  await page.keyboard.press("Escape");
-  await wait(350);
-  await page.keyboard.press("s");
-  await wait(500);
-  outputs.push(await captureCanvas(page, "03-settings.png"));
+    await page.keyboard.press("Escape");
+    await wait(350);
+    await page.keyboard.press("s");
+    await wait(500);
+    outputs.push(await captureCanvas(page, "03-settings.png"));
 
-  await page.keyboard.press("Escape");
-  await wait(350);
-  await page.keyboard.press("Enter");
-  await wait(2200);
-  outputs.push(await captureCanvas(page, "04-gameplay-hud.png"));
+    await page.keyboard.press("Escape");
+    await wait(350);
+    await page.keyboard.press("Enter");
+    await wait(2200);
+    outputs.push(await captureCanvas(page, "04-gameplay-hud.png"));
 
-  await page.keyboard.press("p");
-  await wait(400);
-  outputs.push(await captureCanvas(page, "05-pause-menu.png"));
+    await page.keyboard.press("p");
+    await wait(400);
+    outputs.push(await captureCanvas(page, "05-pause-menu.png"));
 
-  await page.keyboard.press("p");
-  await wait(250);
-  await page.keyboard.down("ArrowRight");
-  await wait(350);
-  await page.keyboard.up("ArrowRight");
-  await page.keyboard.down("ArrowDown");
-  await wait(300);
-  await page.keyboard.up("ArrowDown");
-  await wait(350);
-  outputs.push(await captureCanvas(page, "06-gameplay-action.png"));
-
-  await browser.close();
+    await page.keyboard.press("p");
+    await wait(250);
+    await page.keyboard.down("ArrowRight");
+    await wait(350);
+    await page.keyboard.up("ArrowRight");
+    await page.keyboard.down("ArrowDown");
+    await wait(300);
+    await page.keyboard.up("ArrowDown");
+    await wait(350);
+    outputs.push(await captureCanvas(page, "06-gameplay-action.png"));
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (closeError) {
+        console.warn("Failed to close browser cleanly:", closeError?.message ?? closeError);
+      }
+    }
+  }
 
   for (const file of outputs) {
     console.log(`Created ${file}`);
