@@ -11,6 +11,7 @@ export class DayCompleteScene extends Phaser.Scene {
     this.totalScore = 0;
     this.totalDelivered = 0;
     this.shiftNumber = 1;
+    this.bestCombo = 0;
     this.onNextShiftKeyDown = null;
     this.onMenuKeyDown = null;
   }
@@ -19,6 +20,7 @@ export class DayCompleteScene extends Phaser.Scene {
     this.totalScore = data?.totalScore ?? 0;
     this.totalDelivered = data?.totalDelivered ?? 0;
     this.shiftNumber = data?.shiftNumber ?? 1;
+    this.bestCombo = data?.bestCombo ?? 0;
   }
 
   create() {
@@ -92,6 +94,18 @@ export class DayCompleteScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+    const grade = this.getPerformanceGrade(this.totalScore, this.shiftNumber);
+    const comboLine = this.bestCombo >= 3 ? `  BEST COMBO ×${this.bestCombo}` : "";
+    this.add
+      .text(panelX, panelTop + 360, `GRADE: ${grade}${comboLine}`, {
+        fontFamily: "Courier New, monospace",
+        fontSize: "18px",
+        color: grade === "S" ? "#ffe08a" : "#7fa0d0",
+        stroke: "#0d1728",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5);
+
     this.add.rectangle(panelX, panelTop + 406, panelWidth - 220, 56, 0x341019, 1).setStrokeStyle(3, GOLD_ACCENT);
     this.add
       .text(panelX, panelTop + 404, "START NEXT SHIFT", {
@@ -133,6 +147,7 @@ export class DayCompleteScene extends Phaser.Scene {
       totalScore: this.totalScore,
       totalDelivered: this.totalDelivered,
       shiftNumber: this.shiftNumber,
+      bestCombo: this.bestCombo,
     });
   }
 
@@ -150,5 +165,14 @@ export class DayCompleteScene extends Phaser.Scene {
     this.input?.keyboard?.off?.("keydown-SPACE", this.onNextShiftKeyDown, this);
     this.input?.keyboard?.off?.("keydown-ESC", this.onMenuKeyDown, this);
     this.scale?.off?.("resize", this.handleScaleResize, this);
+  }
+
+  /** Returns S/A/B/C based on score relative to day number. */
+  getPerformanceGrade(score, dayNumber) {
+    const threshold = (dayNumber ?? 1) * 90;
+    if (score >= threshold * 4) return "S";
+    if (score >= threshold * 2.5) return "A";
+    if (score >= threshold * 1.2) return "B";
+    return "C";
   }
 }

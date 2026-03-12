@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 16 24" shape-rendering="crispEdges" style="image-rendering:pixelated">
+  <!-- SNES-style rival waiter: high-contrast magenta jacket, gold hair, cyan bow tie -->
+
+  <!-- Hair (rows 0-1) - bright gold -->
+  <rect x="4" y="0" width="8" height="1" fill="#D8A838"/>
+  <rect x="3" y="1" width="10" height="1" fill="#D8A838"/>
+
+  <!-- Head outline + skin (rows 2-5) -->
+  <rect x="2" y="2" width="1" height="4" fill="#2A1030"/>
+  <rect x="3" y="2" width="10" height="4" fill="#DDA870"/>
+  <rect x="13" y="2" width="1" height="4" fill="#2A1030"/>
+
+  <!-- Eyes (row 3) -->
+  <rect x="5" y="3" width="1" height="1" fill="#0A0808"/>
+  <rect x="10" y="3" width="1" height="1" fill="#0A0808"/>
+
+  <!-- Mouth line (row 5) - thinner to look more stern -->
+  <rect x="6" y="5" width="4" height="1" fill="#7A2A54"/>
+
+  <!-- Chin (row 6, narrower) -->
+  <rect x="3" y="6" width="1" height="1" fill="#2A1030"/>
+  <rect x="4" y="6" width="8" height="1" fill="#DDA870"/>
+  <rect x="12" y="6" width="1" height="1" fill="#2A1030"/>
+
+  <!-- White collar (row 7) -->
+  <rect x="5" y="7" width="6" height="1" fill="#F0F0F0"/>
+
+  <!-- High-contrast jacket sides (rows 8-12) -->
+  <rect x="1" y="8" width="4" height="5" fill="#8C1F66"/>
+  <rect x="11" y="8" width="4" height="5" fill="#8C1F66"/>
+
+  <!-- Pale shirt front (rows 8-12) -->
+  <rect x="5" y="8" width="6" height="5" fill="#E8E0D0"/>
+
+  <!-- Cyan bow tie (row 9) -->
+  <rect x="7" y="9" width="2" height="1" fill="#2ECDE8"/>
+
+  <!-- Belt / lower jacket (row 13) -->
+  <rect x="1" y="13" width="14" height="1" fill="#2A1030"/>
+
+  <!-- Pants (rows 14-16) -->
+  <rect x="1" y="14" width="14" height="3" fill="#231235"/>
+
+  <!-- Legs (rows 17-21, gap at cols 7-8) -->
+  <rect x="1" y="17" width="6" height="5" fill="#231235"/>
+  <rect x="9" y="17" width="6" height="5" fill="#231235"/>
+
+  <!-- Shoes (rows 22-23) -->
+  <rect x="0" y="22" width="7" height="2" fill="#080808"/>
+  <rect x="9" y="22" width="7" height="2" fill="#080808"/>
+</svg>

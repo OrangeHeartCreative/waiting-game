@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="56" viewBox="0 0 20 28" shape-rendering="crispEdges" style="image-rendering:pixelated">
+  <!-- SNES-style chef sprite, 20x28 pixel grid -->
+
+  <!-- Hat top -->
+  <rect x="4" y="0" width="12" height="2" fill="#FFFFFF"/>
+  <rect x="2" y="2" width="16" height="2" fill="#FFFFFF"/>
+
+  <!-- Hat band -->
+  <rect x="3" y="4" width="14" height="2" fill="#D8D8D8"/>
+
+  <!-- Head outline and skin -->
+  <rect x="4" y="6" width="1" height="6" fill="#2A1208"/>
+  <rect x="5" y="6" width="10" height="6" fill="#E0B080"/>
+  <rect x="15" y="6" width="1" height="6" fill="#2A1208"/>
+
+  <!-- Eyes -->
+  <rect x="7" y="8" width="1" height="1" fill="#0A0808"/>
+  <rect x="12" y="8" width="1" height="1" fill="#0A0808"/>
+
+  <!-- Mustache -->
+  <rect x="7" y="10" width="6" height="1" fill="#4A2010"/>
+
+  <!-- Neck -->
+  <rect x="8" y="12" width="4" height="1" fill="#E0B080"/>
+
+  <!-- Jacket -->
+  <rect x="3" y="13" width="14" height="9" fill="#F4F4F4"/>
+  <rect x="2" y="14" width="2" height="6" fill="#E8E8E8"/>
+  <rect x="16" y="14" width="2" height="6" fill="#E8E8E8"/>
+
+  <!-- Buttons -->
+  <rect x="9" y="15" width="2" height="1" fill="#C8A030"/>
+  <rect x="9" y="18" width="2" height="1" fill="#C8A030"/>
+
+  <!-- Apron -->
+  <rect x="6" y="19" width="8" height="7" fill="#E8F0FF"/>
+
+  <!-- Pants -->
+  <rect x="4" y="22" width="12" height="4" fill="#182438"/>
+
+  <!-- Shoes -->
+  <rect x="4" y="26" width="5" height="2" fill="#080808"/>
+  <rect x="11" y="26" width="5" height="2" fill="#080808"/>
+</svg>

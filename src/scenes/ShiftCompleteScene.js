@@ -15,6 +15,7 @@ export class ShiftCompleteScene extends Phaser.Scene {
     this.shiftNumber = 1;
     this.shiftCount = 1;
     this.isDayComplete = false;
+    this.bestCombo = 0;
     this.onNextShiftKeyDown = null;
     this.onMenuKeyDown = null;
   }
@@ -26,6 +27,7 @@ export class ShiftCompleteScene extends Phaser.Scene {
     this.shiftNumber = data?.shiftNumber ?? 1;
     this.shiftCount = (this.shiftNumber - 1) * LEVELS_PER_DAY + this.shiftLevel;
     this.isDayComplete = data?.isDayComplete ?? this.shiftLevel >= LEVELS_PER_DAY;
+    this.bestCombo = data?.bestCombo ?? 0;
   }
 
   create() {
@@ -108,7 +110,17 @@ export class ShiftCompleteScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    this.add.rectangle(panelX, panelTop + 406, panelWidth - 220, 56, 0x341019, 1).setStrokeStyle(3, GOLD_ACCENT);
+    const grade = this.getPerformanceGrade(this.totalScore, this.shiftCount);
+    const comboLine = this.bestCombo >= 3 ? `  BEST COMBO ×${this.bestCombo}` : "";
+    this.add
+      .text(panelX, panelTop + 360, `GRADE: ${grade}${comboLine}`, {
+        fontFamily: "Courier New, monospace",
+        fontSize: "18px",
+        color: grade === "S" ? "#ffe08a" : "#7fa0d0",
+        stroke: "#0d1728",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5);
     this.add
       .text(panelX, panelTop + 404, "START NEXT SHIFT", {
         fontFamily: "Courier New, monospace",
@@ -151,6 +163,7 @@ export class ShiftCompleteScene extends Phaser.Scene {
       shiftLevel: this.shiftLevel,
       shiftNumber: this.shiftNumber,
       isDayComplete: this.isDayComplete,
+      bestCombo: this.bestCombo,
     });
   }
 
@@ -168,5 +181,14 @@ export class ShiftCompleteScene extends Phaser.Scene {
     this.input?.keyboard?.off?.("keydown-SPACE", this.onNextShiftKeyDown, this);
     this.input?.keyboard?.off?.("keydown-ESC", this.onMenuKeyDown, this);
     this.scale?.off?.("resize", this.handleScaleResize, this);
+  }
+
+  /** Returns S/A/B/C based on score relative to shift number. */
+  getPerformanceGrade(score, shiftCount) {
+    const threshold = (shiftCount ?? 1) * 30;
+    if (score >= threshold * 4) return "S";
+    if (score >= threshold * 2.5) return "A";
+    if (score >= threshold * 1.2) return "B";
+    return "C";
   }
 }

@@ -1,6 +1,7 @@
 import Phaser from "phaser";
-import { COLORS, SPACING } from "../ui/tokens";
+import { COLORS } from "../ui/tokens";
 import { DAY_COMPLETE_SCENE_KEY, GAME_SCENE_KEY, MENU_SCENE_KEY, SHIFT_COMPLETE_SCENE_KEY } from "./sceneKeys";
+import { AudioManager } from "../audio/AudioManager.js";
 
 const ROUND_DURATION_SECONDS = 30;
 const LEVELS_PER_SHIFT = 3;
@@ -27,6 +28,8 @@ const RIVAL_SPEED = 150;
 const RIVAL_RADIUS = 14;
 const RIVAL_TIME_PENALTY_SECONDS = 1.5;
 const RIVAL_HIT_COOLDOWN_MS = 1400;
+const RIVAL_POST_HIT_ESCAPE_GRACE_MS = 850;
+const RIVAL_POST_BUMP_DISENGAGE_MS = 1200;
 const RIVAL_STUN_DURATION_MS = 900;
 const RIVAL_BUMP_COOLDOWN_MS = 1800;
 const RIVAL_BUMP_CHASE_LOCKOUT_MS = 2600;
@@ -65,7 +68,6 @@ const RIVAL_TABLE_SWITCH_CHANCE = 0.4;
 const RIVAL_EDGE_FOLLOW_STEP = 12;
 const RIVAL_BUMP_RESPONSE_FACTOR = 0.75;
 const RIVAL_BUMP_MIN_IMPULSE = 42;
-const PLAYER_RIVAL_BOUNCEBACK_DISTANCE = 8;
 const RIVAL_PASS_NO_GO_RADIUS = 52;
 const RIVAL_VARIATION_BASE_CHANCE = 0.18;
 const RIVAL_VARIATION_MAX_CHANCE = 0.38;
@@ -103,6 +105,22 @@ const TABLE_VARIANTS = [
   { width: 126, height: 38, orientation: "horizontal" },
   { width: 38, height: 98, orientation: "vertical" },
 ];
+
+// Combo chain
+const COMBO_TIER_1_THRESHOLD = 3;
+const COMBO_TIER_2_THRESHOLD = 5;
+const COMBO_TIER_1_MULTIPLIER = 1.5;
+const COMBO_TIER_2_MULTIPLIER = 2.0;
+// Pause overlay
+const PAUSE_OVERLAY_DEPTH = 100;
+// Per-day twist identifiers
+const DAY_TWIST_RUSH_HOUR = "rush_hour";
+const DAY_TWIST_BLUE_PLATE = "blue_plate";
+const DAY_TWIST_PEAK_SERVICE = "peak_service";
+const RUSH_HOUR_RIVAL_SPEED_BONUS = 0.15;
+const BLUE_PLATE_SCORE_MULTIPLIER = 1.25;
+const PEAK_SERVICE_TIMER_PENALTY = 5;
+const TIMER_LOW_WARNING_SECONDS = 7;
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -152,6 +170,7 @@ export class GameScene extends Phaser.Scene {
     this.playerLocationHintText = null;
     this.rivalPenaltyHintText = null;
     this.hideRivalPenaltyHintEvent = null;
+    this.playerRivalGhostUntil = 0;
     this.returnToMenuEvent = null;
     this.onEscKeyDown = null;
     this.layoutIndex = 0;
@@ -162,99 +181,159 @@ export class GameScene extends Phaser.Scene {
     this.layoutPlateGoal = FIRST_DAY_PLATE_GOAL;
     this.roundBumpCount = 0;
     this.deliveryDurations = [];
+    // Combo chain
+    this.comboCount = 0;
+    this.bestComboStreak = 0;
+    this.comboFlashText = null;
+    this.hideComboFlashEvent = null;
+    // Pause
+    this.isPaused = false;
+    this.pauseOverlay = null;
+    this.onPauseKeyDown = null;
+    this.onPauseEnterKeyDown = null;
+    this.onRestartShiftDown = null;
+    this.pauseResumeKey = null;
+    this.pauseRestartKey = null;
+    this.pauseMainMenuKey = null;
+    // Day twist
+    this.dayTwist = null;
+    // Timer warning
+    this.hasPlayedTimerWarning = false;
+    this.rivalBumpDetectedThisFrame = false;
   }
 
   create() {
     const { width, height } = this.scale;
     const hudTop = 0;
-    const hudHeight = 70;
-    const hudPrimaryY = 8;
-    const hudSecondaryY = 36;
-    const hudWarningY = 44;
+    const hudHeight = 72;
+    const hudPrimaryY = 18;
+    const hudSecondaryY = 42;
+    const hudWarningY = 60;
     const arenaTop = hudTop + hudHeight;
     const arenaHeight = height - arenaTop;
 
+    AudioManager.playGameMusic();
+
+    this.dayTwist = this.getDayTwistForDay(this.shiftNumber);
     this.layoutPlateGoal = this.getLayoutPlateGoalForDay(this.shiftNumber);
     this.remainingTime = this.getRoundDurationSecondsForDay(this.shiftNumber);
+    if (this.dayTwist === DAY_TWIST_PEAK_SERVICE) {
+      this.remainingTime = Math.max(MIN_ROUND_DURATION_SECONDS, this.remainingTime - PEAK_SERVICE_TIMER_PENALTY);
+    }
 
     this.cameras.main.setBackgroundColor(COLORS.background);
 
     this.add.rectangle(width / 2, hudTop, width, hudHeight, 0x000000, 1).setOrigin(0.5, 0).setDepth?.(30);
-    this.add
-      .rectangle(width / 2, hudTop + hudHeight / 2, width - 8, hudHeight - 8, 0x000000, 1)
-      .setStrokeStyle?.(3, 0x000000)
-      .setDepth?.(31);
 
-    this.add.rectangle(138, hudTop + hudHeight / 2, 244, 54, 0x1d3455, 1).setStrokeStyle?.(2, 0x7fa0d0).setDepth?.(31);
-    this.add.rectangle(width / 2, hudTop + hudHeight / 2, 196, 54, 0x2c1220, 1).setStrokeStyle?.(2, 0xf6c453).setDepth?.(31);
-    this.add
-      .rectangle(width - 132, hudTop + hudHeight / 2, 248, 54, 0x1d3455, 1)
-      .setStrokeStyle?.(2, 0x7fa0d0)
-      .setDepth?.(31);
+    const centerX = width / 2;
+    const leftColumnX = centerX - 210;
+    const centerColumnX = centerX;
+    const rightColumnX = centerX + 210;
+    const hudAccentColor = Number.parseInt("F6C453", 16);
 
-    for (let x = 20; x < width - 20; x += 22) {
-      this.add.rectangle(x, hudTop + hudHeight - 8, 12, 4, 0xc8a030, 1).setDepth?.(31);
-    }
+    // HUD icons: prefer manifest sprites, fallback to simple vector marks in tests/headless.
+    const scoreIcon = this.textures?.exists?.("plate")
+      ? this.add.image(leftColumnX - 26, hudPrimaryY, "plate").setDisplaySize(16, 16)
+      : this.add.circle(leftColumnX - 26, hudPrimaryY, 7, hudAccentColor, 1);
+    scoreIcon?.setDepth?.(32);
 
-    this.scoreText = this.add.text(SPACING.md, hudPrimaryY, `SCORE: ${this.getTotalScore()}`, {
+    const timerIcon = this.add.circle(centerColumnX - 58, hudPrimaryY, 8, 0x183250, 1).setStrokeStyle?.(2, hudAccentColor);
+    timerIcon?.setDepth?.(32);
+    const timerNeedle = this.add.rectangle(centerColumnX - 56, hudPrimaryY - 1, 2, 7, hudAccentColor, 1);
+    timerNeedle?.setDepth?.(33);
+
+    const goalIcon = this.textures?.exists?.("chef")
+      ? this.add.image(rightColumnX - 30, hudPrimaryY, "chef").setDisplaySize(16, 16)
+      : this.add.triangle(rightColumnX - 30, hudPrimaryY, 0, 14, 14, 14, 7, 0, 0x7fe38b, 1).setStrokeStyle?.(1, 0xd8f7e0);
+    goalIcon?.setDepth?.(32);
+
+    this.scoreText = this.add.text(leftColumnX, hudPrimaryY, `${this.getTotalScore()}`, {
       fontFamily: "Courier New, monospace",
-      fontSize: "20px",
+      fontSize: "30px",
       color: "#f1f5ff",
       stroke: "#0a1424",
-      strokeThickness: 3,
+      strokeThickness: 2,
     });
+    this.scoreText.setOrigin?.(0.5, 0.5);
     this.scoreText.setDepth?.(32);
 
-    this.goalHudText = this.add.text(width - SPACING.md, hudPrimaryY, `GOAL LEFT: ${this.layoutPlateGoal}`, {
+    this.goalHudText = this.add.text(rightColumnX, hudPrimaryY, `${this.layoutPlateGoal}`, {
       fontFamily: "Courier New, monospace",
-      fontSize: "18px",
+      fontSize: "30px",
       color: "#f6c453",
       stroke: "#251012",
-      strokeThickness: 3,
+      strokeThickness: 2,
     });
-    this.goalHudText.setOrigin?.(1, 0);
+    this.goalHudText.setOrigin?.(0.5, 0.5);
     this.goalHudText.setDepth?.(32);
 
-    this.targetHudText = this.add.text(width - SPACING.md, hudSecondaryY, "TARGET: --", {
+    this.targetHudText = this.add.text(rightColumnX, hudSecondaryY, "--", {
       fontFamily: "Courier New, monospace",
-      fontSize: "14px",
+      fontSize: "24px",
       color: "#d8e3f6",
       stroke: "#0a1424",
-      strokeThickness: 2,
+      strokeThickness: 1,
     });
-    this.targetHudText.setOrigin?.(1, 0);
+    this.targetHudText.setOrigin?.(0.5, 0.5);
     this.targetHudText.setDepth?.(32);
 
-    this.shiftLevelText = this.add.text(SPACING.md, hudSecondaryY, this.formatShiftLabel(), {
+    this.shiftLevelText = this.add.text(leftColumnX, hudSecondaryY, this.formatHudShiftValue(), {
       fontFamily: "Courier New, monospace",
-      fontSize: "13px",
+      fontSize: "24px",
       color: "#b9c6dd",
       stroke: "#0a1424",
-      strokeThickness: 2,
+      strokeThickness: 1,
     });
+    this.shiftLevelText.setOrigin?.(0.5, 0.5);
     this.shiftLevelText.setDepth?.(32);
 
     this.timerText = this.add
-      .text(width / 2, hudPrimaryY, `TIMER: ${this.formatTime(this.remainingTime)}`, {
+      .text(centerColumnX, hudPrimaryY, `${this.formatTime(this.remainingTime)}`, {
         fontFamily: "Courier New, monospace",
-        fontSize: "21px",
+        fontSize: "32px",
         color: "#fff0c7",
         stroke: "#241112",
-        strokeThickness: 3,
+        strokeThickness: 2,
       })
-      .setOrigin(0.5, 0);
+      .setOrigin(0.5, 0.5);
     this.timerText.setDepth?.(32);
 
     this.rivalPenaltyHintText = this.add.text(width / 2, hudWarningY, "", {
       fontFamily: "Courier New, monospace",
-      fontSize: "14px",
+      fontSize: "16px",
       color: "#f6c453",
       stroke: "#2d1315",
-      strokeThickness: 2,
+      strokeThickness: 1,
     });
-    this.rivalPenaltyHintText.setOrigin?.(0.5, 0);
+    this.rivalPenaltyHintText.setOrigin?.(0.5, 0.5);
     this.rivalPenaltyHintText.setAlpha?.(0);
     this.rivalPenaltyHintText.setDepth?.(32);
+
+    // Combo flash popup (fades out after each combo delivery)
+    this.comboFlashText = this.add.text(width / 2, hudTop + hudHeight + 28, "", {
+      fontFamily: "Courier New, monospace",
+      fontSize: "17px",
+      color: "#f6c453",
+      stroke: "#2d1315",
+      strokeThickness: 3,
+    });
+    this.comboFlashText.setOrigin?.(0.5, 0);
+    this.comboFlashText.setAlpha?.(0);
+    this.comboFlashText.setDepth?.(32);
+
+    // Day-twist badge displayed in HUD when a special modifier is active
+    const twistHudValue = this.getDayTwistHudValue(this.dayTwist);
+    if (twistHudValue) {
+      const twistBadge = this.add.text(centerColumnX + 150, hudWarningY, `★ ${twistHudValue}`, {
+        fontFamily: "Courier New, monospace",
+        fontSize: "14px",
+        color: "#ffe08a",
+        stroke: "#1a0608",
+        strokeThickness: 1,
+      });
+      twistBadge.setOrigin?.(0.5, 0.5);
+      twistBadge.setDepth?.(32);
+    }
 
     this.arenaBounds = {
       minX: 0,
@@ -338,6 +417,10 @@ export class GameScene extends Phaser.Scene {
     this.input?.keyboard?.off?.("keydown-ESC", this.onEscKeyDown, this);
     this.input?.keyboard?.on?.("keydown-ESC", this.onEscKeyDown, this);
 
+    this.onPauseKeyDown = this.onPauseKeyDown ?? this.togglePause.bind(this);
+    this.input?.keyboard?.off?.("keydown-P", this.onPauseKeyDown, this);
+    this.input?.keyboard?.on?.("keydown-P", this.onPauseKeyDown, this);
+
     this.lastKnownScaleSize = {
       width: Math.round(this.scale.width),
       height: Math.round(this.scale.height),
@@ -352,8 +435,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   cleanupSceneRuntime() {
+    AudioManager.stopMusic();
     this.scale?.off?.("resize", this.handleScaleResize, this);
     this.input?.keyboard?.off?.("keydown-ESC", this.onEscKeyDown, this);
+    this.input?.keyboard?.off?.("keydown-P", this.onPauseKeyDown, this);
+    this.hidePauseOverlay();
 
     if (this.pendingChefAnnouncementEvent?.remove) {
       this.pendingChefAnnouncementEvent.remove(false);
@@ -373,6 +459,11 @@ export class GameScene extends Phaser.Scene {
     if (this.hideRivalPenaltyHintEvent?.remove) {
       this.hideRivalPenaltyHintEvent.remove(false);
       this.hideRivalPenaltyHintEvent = null;
+    }
+
+    if (this.hideComboFlashEvent?.remove) {
+      this.hideComboFlashEvent.remove(false);
+      this.hideComboFlashEvent = null;
     }
 
     if (this.tweens?.killTweensOf) {
@@ -415,6 +506,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (this.isPaused) {
+      this.handlePauseHotkeys();
+      return;
+    }
+
+    this.rivalBumpDetectedThisFrame = false;
     const dt = delta / 1000;
     this.updateTimer(dt);
     if (this.roundEnded) {
@@ -441,12 +538,17 @@ export class GameScene extends Phaser.Scene {
 
   updateTimer(dt) {
     if (!this.orderTimerRunning) {
-      this.timerText?.setText(`TIMER: ${this.formatTime(this.remainingTime)}`);
+      this.timerText?.setText(`${this.formatTime(this.remainingTime)}`);
       return;
     }
 
     this.remainingTime = Math.max(0, this.remainingTime - dt);
-    this.timerText?.setText(`TIMER: ${this.formatTime(this.remainingTime)}`);
+    this.timerText?.setText(`${this.formatTime(this.remainingTime)}`);
+
+    if (!this.hasPlayedTimerWarning && this.remainingTime <= TIMER_LOW_WARNING_SECONDS && this.remainingTime > 0) {
+      this.hasPlayedTimerWarning = true;
+      AudioManager.onTimerWarning();
+    }
 
     if (this.remainingTime <= 0) {
       this.endRound("TIME_UP");
@@ -522,15 +624,20 @@ export class GameScene extends Phaser.Scene {
       return { x: nextX, y: nextY };
     }
 
+    const now = this.time?.now ?? Date.now();
+    if (now < (this.playerRivalGhostUntil ?? 0)) {
+      return { x: nextX, y: nextY };
+    }
+
     const collidedRival = this.rivals.find((rival) => {
       const distance = Phaser.Math.Distance.Between(nextX, nextY, rival.x, rival.y);
       return distance < bodyRadius + rival.radius;
     });
 
     if (collidedRival) {
-      this.applyPlayerRivalBounceback(collidedRival, previousX, previousY, nextX, nextY);
+      // Any body contact with a rival should count as a bump for penalty checks.
+      this.rivalBumpDetectedThisFrame = true;
 
-      const now = this.time?.now ?? Date.now();
       const bumpCooldownUntil = collidedRival.bumpCooldownUntil ?? 0;
       if (now >= bumpCooldownUntil) {
         collidedRival.stunnedUntil = now + RIVAL_STUN_DURATION_MS;
@@ -541,6 +648,12 @@ export class GameScene extends Phaser.Scene {
         collidedRival.nextInterceptionRetargetAt = 0;
         this.assignNextRivalRouteTarget(collidedRival, true);
       }
+
+      // Even when cooldown blocks a new stun, force a short disengage to avoid lock-on body pinning.
+      collidedRival.bumpChaseLockoutUntil = Math.max(
+        collidedRival.bumpChaseLockoutUntil ?? 0,
+        now + RIVAL_POST_BUMP_DISENGAGE_MS
+      );
     }
 
     const rivalColliders = this.rivals.map((rival) => ({
@@ -551,37 +664,6 @@ export class GameScene extends Phaser.Scene {
     }));
 
     return this.resolveCollisionAgainstColliders(nextX, nextY, previousX, previousY, rivalColliders, bodyRadius);
-  }
-
-  applyPlayerRivalBounceback(rival, previousX, previousY, nextX, nextY) {
-    if (!rival) {
-      return;
-    }
-
-    // Nudge rival slightly away from the player's approach vector to prevent sticky overlap.
-    let awayX = rival.x - previousX;
-    let awayY = rival.y - previousY;
-
-    if (Math.abs(awayX) < 0.001 && Math.abs(awayY) < 0.001) {
-      awayX = rival.x - nextX;
-      awayY = rival.y - nextY;
-    }
-
-    const len = Math.hypot(awayX, awayY) || 1;
-    const unitX = awayX / len;
-    const unitY = awayY / len;
-    const candidateX = rival.x + unitX * PLAYER_RIVAL_BOUNCEBACK_DISTANCE;
-    const candidateY = rival.y + unitY * PLAYER_RIVAL_BOUNCEBACK_DISTANCE;
-    const resolved = this.resolveRivalPatrolCollision(candidateX, candidateY, rival.x, rival.y, rival.radius);
-
-    if (resolved.x === rival.x && resolved.y === rival.y) {
-      return;
-    }
-
-    rival.x = resolved.x;
-    rival.y = resolved.y;
-    rival.visual?.setPosition?.(rival.x, rival.y);
-    rival.labelVisual?.setPosition?.(rival.x, rival.y);
   }
 
   resolveTableCollision(nextX, nextY, previousX, previousY, bodyRadius = 14) {
@@ -674,6 +756,7 @@ export class GameScene extends Phaser.Scene {
       this.carryingOrder = true;
       this.orderStage = "needSeat";
       this.setPassPickupAvailability(false);
+      AudioManager.onPickup();
       return;
     }
 
@@ -688,10 +771,23 @@ export class GameScene extends Phaser.Scene {
       this.deliveredPlates += 1;
       const deliveryDuration = this.getRoundDurationSecondsForDay(this.shiftNumber) - this.remainingTime;
       this.deliveryDurations.push(Math.max(0, deliveryDuration));
-      const earnedScore = Math.ceil(this.remainingTime);
+
+      this.comboCount += 1;
+      if (this.comboCount > this.bestComboStreak) {
+        this.bestComboStreak = this.comboCount;
+      }
+      const deliveryMult = this.getDeliveryScoreMultiplier();
+      const earnedScore = Math.ceil(this.remainingTime * deliveryMult);
       this.score += earnedScore;
-      this.scoreText?.setText(`SCORE: ${this.getTotalScore()}`);
+      this.scoreText?.setText(`${this.getTotalScore()}`);
       this.updatePersistentHud();
+      this.showComboFlash(deliveryMult);
+
+      if (this.comboCount >= COMBO_TIER_1_THRESHOLD) {
+        AudioManager.onComboDelivery();
+      } else {
+        AudioManager.onDelivery();
+      }
 
       if (this.deliveredPlates >= this.layoutPlateGoal) {
         this.endRound("LAYOUT_CLEAR");
@@ -1812,25 +1908,18 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const playerRadius = 14;
-    const hitRival = this.rivals.some((rival) => {
-      // Stunned rivals are temporarily incapacitated; exclude them so the player
-      // has a clean escape window for the full stun duration.
-      if (rival.stunnedUntil && now < rival.stunnedUntil) {
-        return false;
-      }
-      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, rival.x, rival.y);
-      return distance < rival.radius + playerRadius;
-    });
-
-    if (!hitRival) {
+    if (!this.rivalBumpDetectedThisFrame) {
       return;
     }
 
     this.lastRivalPenaltyAt = now;
     this.roundBumpCount += 1;
+    this.comboCount = 0;
+    AudioManager.onBump();
+    // Brief grace period lets the player escape instead of getting body-pinned.
+    this.playerRivalGhostUntil = now + RIVAL_POST_HIT_ESCAPE_GRACE_MS;
     this.remainingTime = Math.max(0, this.remainingTime - RIVAL_TIME_PENALTY_SECONDS);
-    this.timerText?.setText(`TIMER: ${this.formatTime(this.remainingTime)}`);
+    this.timerText?.setText(`${this.formatTime(this.remainingTime)}`);
     this.showRivalPenaltyHint(RIVAL_TIME_PENALTY_SECONDS);
 
     if (this.remainingTime <= 0) {
@@ -2000,14 +2089,14 @@ export class GameScene extends Phaser.Scene {
     this.seatZones.forEach((seat) => {
       seat.isActive = seat.label === activeSeat;
       seat.visual?.setAlpha?.(seat.isActive ? 1 : 0.35);
-      seat.labelText?.setColor?.(seat.isActive ? "#fff8d6" : "#6a7897");
+      seat.labelText?.setColor?.(seat.isActive ? "#fff8d6" : "#b8c7e3");
     });
 
     this.tableZones.forEach((zone) => {
       const hasActiveSeat = this.seatZones.some((seat) => seat.tableLabel === zone.label && seat.isActive);
       zone.isActive = hasActiveSeat;
       zone.visual?.setAlpha?.(hasActiveSeat ? 1 : 0.65);
-      zone.labelText?.setColor?.(hasActiveSeat ? "#101522" : "#7f8da9");
+      zone.labelText?.setColor?.(hasActiveSeat ? "#101522" : "#56647e");
     });
 
     this.updatePersistentHud();
@@ -2024,7 +2113,8 @@ export class GameScene extends Phaser.Scene {
     if (nextSeat) this.nextTargets.push(nextSeat);
 
     this.remainingTime = this.getRoundDurationSecondsForDay(this.shiftNumber);
-    this.timerText?.setText(`TIMER: ${this.formatTime(this.remainingTime)}`);
+    this.timerText?.setText(`${this.formatTime(this.remainingTime)}`);
+    this.hasPlayedTimerWarning = false;
     this.orderAnnouncementActive = false;
     this.orderTimerRunning = false;
 
@@ -2193,7 +2283,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.rivalPenaltyHintText.setText?.(`-${secondsLost}s`);
+    this.rivalPenaltyHintText.setText?.(`-${secondsLost}`);
     this.rivalPenaltyHintText.setAlpha?.(1);
 
     if (this.hideRivalPenaltyHintEvent?.remove) {
@@ -2257,12 +2347,14 @@ export class GameScene extends Phaser.Scene {
     if (isLayoutComplete) {
       this.returnToMenuEvent = this.time.delayedCall(550, () => {
         this.returnToMenuEvent = null;
+        AudioManager.onShiftComplete();
         this.scene.start(isLastLevelInDay ? DAY_COMPLETE_SCENE_KEY : SHIFT_COMPLETE_SCENE_KEY, {
           totalScore,
           totalDelivered,
           shiftLevel: this.shiftLevel,
           shiftNumber: this.shiftNumber,
           isDayComplete: isLastLevelInDay,
+          bestCombo: this.bestComboStreak,
         });
       });
       return;
@@ -2285,7 +2377,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   getLayoutIndexForDay(dayNumber) {
-    const cadence = [0, 1, 2, 1];
+    const cadence = [0, 1, 2, 1, 3, 4, 0, 2, 3, 1];
     return cadence[(Math.max(1, dayNumber) - 1) % cadence.length];
   }
 
@@ -2406,11 +2498,15 @@ export class GameScene extends Phaser.Scene {
     if (this.layoutIndex === 1) {
       return this.getLayout2TablePositions();
     }
-
     if (this.layoutIndex === 2) {
       return this.getLayout3TablePositions();
     }
-
+    if (this.layoutIndex === 3) {
+      return this.getLayout4TablePositions();
+    }
+    if (this.layoutIndex === 4) {
+      return this.getLayout5TablePositions();
+    }
     return this.getLayout1TablePositions();
   }
 
@@ -2881,17 +2977,6 @@ export class GameScene extends Phaser.Scene {
     this.add.rectangle(px - 20, this.pickupZone.y + 13, 18, 1, 0xD0C8B8, 0.6);
     this.add.rectangle(px + 10, this.pickupZone.y + 15, 22, 1, 0xD0C8B8, 0.6);
 
-    // "PASS" label in gold, SNES-style font weight
-    this.add
-      .text(px, this.pickupZone.y + 2, "PASS", {
-        fontFamily: "Verdana, sans-serif",
-        fontSize: "13px",
-        color: "#F0C860",
-        stroke: "#200608",
-        strokeThickness: 2,
-      })
-      .setOrigin(0.5);
-
     // Brass handle decorations (small gold rects)
     this.add.rectangle(px - 26, this.pickupZone.y - 2, 6, 10, 0xC8880A, 1).setStrokeStyle(1, 0xF0C060);
     this.add.rectangle(px + 26, this.pickupZone.y - 2, 6, 10, 0xC8880A, 1).setStrokeStyle(1, 0xF0C060);
@@ -2910,8 +2995,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const fillColor = isReady ? 0xf6c453 : 0x60779d;
-    const strokeColor = isReady ? 0xffefb5 : 0x9eb0c7;
+    const fillColor = isReady ? 0xf6c453 : 0x89a5cc;
+    const strokeColor = isReady ? 0xffefb5 : 0xd4e3f5;
     const fillAlpha = isReady ? 0.55 : 0.25;
     this.passInteractionVisual.setFillStyle?.(fillColor, fillAlpha);
     this.passInteractionVisual.setStrokeStyle?.(2, strokeColor);
@@ -2920,7 +3005,11 @@ export class GameScene extends Phaser.Scene {
   updatePersistentHud() {
     if (this.goalHudText) {
       const remainingGoal = Math.max(0, this.layoutPlateGoal - this.deliveredPlates);
-      this.goalHudText.setText?.(`GOAL LEFT: ${remainingGoal}`);
+      this.goalHudText.setText?.(`${remainingGoal}`);
+    }
+
+    if (this.shiftLevelText) {
+      this.shiftLevelText.setText?.(this.formatHudShiftValue());
     }
 
     if (!this.targetHudText) {
@@ -2929,11 +3018,45 @@ export class GameScene extends Phaser.Scene {
 
     const announcedSeat = this.announcedTargetSeatLabel;
     if (!announcedSeat) {
-      this.targetHudText.setText?.("TARGET: --");
+      this.targetHudText.setText?.("--");
       return;
     }
 
-    this.targetHudText.setText?.(`TARGET: ${announcedSeat}`);
+    this.targetHudText.setText?.(this.formatTargetSeatHudValue(announcedSeat));
+  }
+
+  formatTargetSeatHudValue(seatLabel) {
+    if (!seatLabel) {
+      return "--";
+    }
+
+    const match = /^([A-Z]+)(\d+)$/i.exec(seatLabel.trim());
+    if (!match) {
+      return seatLabel;
+    }
+
+    const [, tableId, seatNumber] = match;
+    return `${tableId.toUpperCase()}/${seatNumber}`;
+  }
+
+  formatHudShiftValue() {
+    return `${this.shiftNumber}-${this.shiftLevel}`;
+  }
+
+  getDayTwistHudValue(dayTwist) {
+    if (dayTwist === DAY_TWIST_RUSH_HOUR) {
+      return "+15";
+    }
+
+    if (dayTwist === DAY_TWIST_BLUE_PLATE) {
+      return "+25";
+    }
+
+    if (dayTwist === DAY_TWIST_PEAK_SERVICE) {
+      return "-5";
+    }
+
+    return "";
   }
 
   createRivals(playerSpawn) {
@@ -2955,8 +3078,8 @@ export class GameScene extends Phaser.Scene {
       if (this.textures?.exists(RIVAL_ASSET_KEY)) {
         visual = this.add.image(seed.x, seed.y, RIVAL_ASSET_KEY).setDisplaySize(28, 42);
       } else {
-        visual = this.add.circle(seed.x, seed.y, RIVAL_RADIUS, 0x3A0A18, 1);
-        visual.setStrokeStyle?.(2, 0xC8A030);
+        visual = this.add.circle(seed.x, seed.y, RIVAL_RADIUS, 0x8c1f66, 1);
+        visual.setStrokeStyle?.(2, 0x2ecde8);
       }
       const labelVisual = null;
 
@@ -3004,7 +3127,8 @@ export class GameScene extends Phaser.Scene {
 
       const profile = this.getRivalAggressionProfile(index);
       rival.aggressionLabel = profile.label;
-      rival.moveSpeed = Math.round(RIVAL_SPEED * profile.speedScale * this.getRivalSpeedScaleForDay(this.shiftNumber));
+      const rushBonus = this.dayTwist === DAY_TWIST_RUSH_HOUR ? RUSH_HOUR_RIVAL_SPEED_BONUS : 0;
+      rival.moveSpeed = Math.round(RIVAL_SPEED * profile.speedScale * (this.getRivalSpeedScaleForDay(this.shiftNumber) + rushBonus));
       rival.retargetScale = profile.retargetScale;
       rival.playerInfluenceMin = profile.playerInfluenceMin;
       rival.bumpImpulseScale = profile.bumpImpulseScale;
@@ -3127,5 +3251,234 @@ export class GameScene extends Phaser.Scene {
     // Inner gold trim
     border.lineStyle(2, 0xC8A030, 1);
     border.strokeRect(minX + 4, minY + 4, arenaWidth - 8, arenaHeight - 8);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Day twist helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  getDayTwistForDay(dayNumber) {
+    const twists = [
+      null,              // Day 1 — no twist (tutorial day)
+      null,              // Day 2
+      DAY_TWIST_RUSH_HOUR,  // Day 3 — rivals faster
+      null,              // Day 4
+      DAY_TWIST_BLUE_PLATE, // Day 5 — score multiplier
+      null,              // Day 6
+      DAY_TWIST_PEAK_SERVICE, // Day 7 — reduced timer start
+      DAY_TWIST_RUSH_HOUR,  // Day 8
+      DAY_TWIST_BLUE_PLATE, // Day 9
+      DAY_TWIST_PEAK_SERVICE, // Day 10
+    ];
+    const index = Math.max(0, (dayNumber ?? 1) - 1);
+    return twists[index % twists.length] ?? null;
+  }
+
+  getDayTwistLabel(twist) {
+    if (twist === DAY_TWIST_RUSH_HOUR) {
+      return "RUSH HOUR";
+    }
+    if (twist === DAY_TWIST_BLUE_PLATE) {
+      return "BLUE PLATE SPECIAL";
+    }
+    if (twist === DAY_TWIST_PEAK_SERVICE) {
+      return "PEAK SERVICE";
+    }
+    return null;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Combo chain helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  getComboMultiplier() {
+    if (this.comboCount >= COMBO_TIER_2_THRESHOLD) {
+      return COMBO_TIER_2_MULTIPLIER;
+    }
+    if (this.comboCount >= COMBO_TIER_1_THRESHOLD) {
+      return COMBO_TIER_1_MULTIPLIER;
+    }
+    return 1;
+  }
+
+  getDeliveryScoreMultiplier() {
+    let mult = this.getComboMultiplier();
+    if (this.dayTwist === DAY_TWIST_BLUE_PLATE) {
+      mult *= BLUE_PLATE_SCORE_MULTIPLIER;
+    }
+    return mult;
+  }
+
+  showComboFlash(multiplier) {
+    if (!this.comboFlashText) {
+      return;
+    }
+    if (this.comboCount < COMBO_TIER_1_THRESHOLD) {
+      this.comboFlashText.setAlpha?.(0);
+      return;
+    }
+    const label = this.comboCount >= COMBO_TIER_2_THRESHOLD
+      ? `×${multiplier.toFixed(1)} COMBO x${this.comboCount}!`
+      : `×${multiplier.toFixed(1)} COMBO`;
+    this.comboFlashText.setText?.(label);
+    this.comboFlashText.setAlpha?.(1);
+
+    if (this.hideComboFlashEvent?.remove) {
+      this.hideComboFlashEvent.remove(false);
+      this.hideComboFlashEvent = null;
+    }
+    if (this.time?.delayedCall) {
+      this.hideComboFlashEvent = this.time.delayedCall(900, () => {
+        this.comboFlashText?.setAlpha?.(0);
+        this.hideComboFlashEvent = null;
+      });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Pause overlay
+  // ─────────────────────────────────────────────────────────────────────────
+
+  togglePause() {
+    if (this.roundEnded) {
+      return;
+    }
+    if (this.isPaused) {
+      this.resumeGame();
+    } else {
+      this.pauseGame();
+    }
+  }
+
+  pauseGame() {
+    this.isPaused = true;
+    AudioManager.resume();
+    this.showPauseOverlay();
+  }
+
+  resumeGame() {
+    this.isPaused = false;
+    this.hidePauseOverlay();
+  }
+
+  showPauseOverlay() {
+    if (this.pauseOverlay) {
+      return;
+    }
+    const width = this.scale?.width ?? 1280;
+    const height = this.scale?.height ?? 720;
+
+    const bg = this.add?.rectangle(width / 2, height / 2, width, height, 0x0a0f1a, 0.78);
+    bg?.setDepth?.(PAUSE_OVERLAY_DEPTH);
+
+    const card = this.add?.rectangle(width / 2, height / 2, 480, 300, 0x142238, 1);
+    card?.setStrokeStyle?.(4, 0xf6c453);
+    card?.setDepth?.(PAUSE_OVERLAY_DEPTH + 1);
+
+    const titleText = this.add?.text(width / 2, height / 2 - 80, "PAUSED", {
+      fontFamily: "Courier New, monospace",
+      fontSize: "52px",
+      color: "#f6c453",
+      stroke: "#21070b",
+      strokeThickness: 7,
+    });
+    titleText?.setOrigin?.(0.5);
+    titleText?.setDepth?.(PAUSE_OVERLAY_DEPTH + 2);
+
+    const hintsText = this.add?.text(width / 2, height / 2 + 10,
+      "P / ESC  —  Resume\nR  —  Restart Shift\nM  —  Main Menu", {
+      fontFamily: "Courier New, monospace",
+      fontSize: "18px",
+      color: "#b9c6dd",
+      stroke: "#0d1728",
+      strokeThickness: 2,
+      align: "center",
+      lineSpacing: 8,
+    });
+    hintsText?.setOrigin?.(0.5);
+    hintsText?.setDepth?.(PAUSE_OVERLAY_DEPTH + 2);
+
+    this.pauseOverlay = { bg, card, titleText, hintsText };
+
+    this.pauseResumeKey = this.pauseResumeKey
+      ?? this.input?.keyboard?.addKey?.(Phaser.Input.Keyboard.KeyCodes.ESC)
+      ?? null;
+    this.pauseRestartKey = this.pauseRestartKey
+      ?? this.input?.keyboard?.addKey?.(Phaser.Input.Keyboard.KeyCodes.R)
+      ?? null;
+    this.pauseMainMenuKey = this.pauseMainMenuKey
+      ?? this.input?.keyboard?.addKey?.(Phaser.Input.Keyboard.KeyCodes.M)
+      ?? null;
+
+    // R/M are handled by deterministic JustDown polling while paused.
+  }
+
+  hidePauseOverlay() {
+    if (!this.pauseOverlay) {
+      return;
+    }
+    const { bg, card, titleText, hintsText } = this.pauseOverlay;
+    bg?.destroy?.();
+    card?.destroy?.();
+    titleText?.destroy?.();
+    hintsText?.destroy?.();
+    this.pauseOverlay = null;
+  }
+
+  handlePauseHotkeys() {
+    if (this.pauseResumeKey && Phaser.Input.Keyboard.JustDown(this.pauseResumeKey)) {
+      this.resumeGame();
+      return;
+    }
+
+    if (this.pauseRestartKey && Phaser.Input.Keyboard.JustDown(this.pauseRestartKey)) {
+      this.hidePauseOverlay();
+      this.scene.restart({
+        shiftLevel: this.shiftLevel,
+        shiftScore: this.shiftScore,
+        shiftDelivered: this.shiftDelivered,
+        shiftNumber: this.shiftNumber,
+      });
+      return;
+    }
+
+    if (this.pauseMainMenuKey && Phaser.Input.Keyboard.JustDown(this.pauseMainMenuKey)) {
+      this.hidePauseOverlay();
+      this.scene.start(MENU_SCENE_KEY);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Additional table layouts (4 and 5)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  getLayout4TablePositions() {
+    // Zigzag pattern — alternating left/right column heights force diagonal routes.
+    return [
+      { label: "A", x: this.mazeColumns[0], y: this.mazeRows[0] },
+      { label: "B", x: this.mazeColumns[2], y: this.mazeRows[2] },
+      { label: "C", x: this.mazeColumns[4], y: this.mazeRows[0] },
+      { label: "D", x: this.mazeColumns[6], y: this.mazeRows[2] },
+      { label: "E", x: this.mazeColumns[1], y: this.mazeRows[3] },
+      { label: "F", x: this.mazeColumns[3], y: this.mazeRows[1] },
+      { label: "G", x: this.mazeColumns[5], y: this.mazeRows[3] },
+      { label: "H", x: this.mazeColumns[2], y: this.mazeRows[4] },
+      { label: "I", x: this.mazeColumns[4], y: this.mazeRows[4] },
+    ];
+  }
+
+  getLayout5TablePositions() {
+    // Ring layout — tables form a loose outer ring with open center.
+    return [
+      { label: "A", x: this.mazeColumns[0], y: this.mazeRows[1] },
+      { label: "B", x: this.mazeColumns[3], y: this.mazeRows[0] },
+      { label: "C", x: this.mazeColumns[6], y: this.mazeRows[1] },
+      { label: "D", x: this.mazeColumns[0], y: this.mazeRows[3] },
+      { label: "E", x: this.mazeColumns[6], y: this.mazeRows[3] },
+      { label: "F", x: this.mazeColumns[1], y: this.mazeRows[4] },
+      { label: "G", x: this.mazeColumns[3], y: this.mazeRows[4] },
+      { label: "H", x: this.mazeColumns[5], y: this.mazeRows[4] },
+      { label: "I", x: this.mazeColumns[3], y: this.mazeRows[2] },
+    ];
   }
 }
