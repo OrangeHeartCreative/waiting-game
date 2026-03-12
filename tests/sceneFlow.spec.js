@@ -13,6 +13,24 @@ import { ASSET_MANIFEST } from "../src/assets/manifest";
 vi.mock("phaser", () => ({
   default: {
     Scene: class {},
+    Input: {
+      Keyboard: {
+        KeyCodes: {
+          S: 83,
+          H: 72,
+          R: 82,
+          M: 77,
+          ESC: 27,
+        },
+        JustDown: (key) => {
+          if (!key?.__justDown) {
+            return false;
+          }
+          key.__justDown = false;
+          return true;
+        },
+      },
+    },
     Math: {
       Clamp: (v, min, max) => Math.max(min, Math.min(max, v)),
       Between: (min, max) => min + Math.floor((max - min) / 2),
@@ -56,6 +74,12 @@ function makeTextObject() {
     setScale() {
       return this;
     },
+    setInteractive() {
+      return this;
+    },
+    on() {
+      return this;
+    },
   };
 }
 
@@ -74,6 +98,12 @@ function makeRectObject() {
       return this;
     },
     setAlpha() {
+      return this;
+    },
+    setInteractive() {
+      return this;
+    },
+    on() {
       return this;
     },
   };
@@ -161,10 +191,18 @@ describe("scene flow smoke", () => {
     const scene = new PreloadScene();
     let startedKey = null;
 
+    scene.cameras = { main: { setBackgroundColor: () => {} } };
     scene.scene = {
       start: (key) => {
         startedKey = key;
       },
+    };
+    // Simulate loader with no assets pending so the fallback path fires.
+    scene.load = {
+      image: () => {},
+      once: () => {},
+      start: () => {},
+      isLoading: () => false,
     };
 
     scene.create();
@@ -281,7 +319,7 @@ describe("scene flow smoke", () => {
 
     expect(scene.score).toBe(0);
     expect(scoreUpdates.length).toBe(0);
-    expect(timerUpdates.at(-1)).toBe("TIMER: 00:29");
+    expect(timerUpdates.at(-1)).toBe("00:29");
   });
 
   it("scales interaction radius and move speed over time", () => {
@@ -644,6 +682,7 @@ describe("scene flow smoke", () => {
         shiftLevel: 1,
         shiftNumber: 1,
         isDayComplete: false,
+        bestCombo: 0,
       },
     });
   });
@@ -681,6 +720,7 @@ describe("scene flow smoke", () => {
         shiftLevel: 3,
         shiftNumber: 2,
         isDayComplete: true,
+        bestCombo: 0,
       },
     });
   });
@@ -692,7 +732,9 @@ describe("scene flow smoke", () => {
     expect(scene.getLayoutIndexForDay(2)).toBe(1);
     expect(scene.getLayoutIndexForDay(3)).toBe(2);
     expect(scene.getLayoutIndexForDay(4)).toBe(1);
-    expect(scene.getLayoutIndexForDay(5)).toBe(0);
+    expect(scene.getLayoutIndexForDay(5)).toBe(3);
+    expect(scene.getLayoutIndexForDay(6)).toBe(4);
+    expect(scene.getLayoutIndexForDay(7)).toBe(0);
   });
 
   it("scales difficulty up from day 2 onward", () => {
@@ -944,12 +986,14 @@ describe("scene flow smoke", () => {
       endedReason = reason;
     };
 
+    scene.rivalBumpDetectedThisFrame = true;
     scene.handleRivalCollisionPenalty();
     expect(scene.remainingTime).toBe(28.5);
-    expect(timerUpdates.at(-1)).toBe("TIMER: 00:29");
+    expect(timerUpdates.at(-1)).toBe("00:29");
     expect(endedReason).toBeNull();
 
     scene.time.now = 1200;
+    scene.rivalBumpDetectedThisFrame = true;
     scene.handleRivalCollisionPenalty();
     expect(scene.remainingTime).toBe(28.5);
   });
@@ -1399,6 +1443,29 @@ describe("scene flow smoke", () => {
     expect(scene.assignNextRivalRouteTarget).toHaveBeenCalledTimes(1);
   });
 
+  it("allows brief escape movement after rival penalty to prevent body-pin lock", () => {
+    const scene = new GameScene();
+    scene.assignNextRivalRouteTarget = vi.fn();
+    scene.player = { x: 100, y: 100 };
+    scene.rivals = [{ x: 110, y: 100, radius: 14, stunnedUntil: 0 }];
+    scene.remainingTime = 30;
+    scene.orderTimerRunning = true;
+    scene.lastRivalPenaltyAt = -Infinity;
+    scene.rivalBumpDetectedThisFrame = true;
+    scene.timerText = { setText: () => {} };
+    scene.showRivalPenaltyHint = () => {};
+    scene.time = { now: 1000 };
+
+    scene.handleRivalCollisionPenalty();
+
+    const freeMove = scene.resolveRivalCollision(110, 100, 100, 100);
+    expect(freeMove).toEqual({ x: 110, y: 100 });
+
+    scene.time.now = 2500;
+    const blockedAgain = scene.resolveRivalCollision(110, 100, 100, 100);
+    expect(blockedAgain).toEqual({ x: 100, y: 100 });
+  });
+
   it("blocks pickup before chef announcement", () => {
     const scene = new GameScene();
 
@@ -1435,5 +1502,380 @@ describe("scene flow smoke", () => {
 
     expect(scene.orderStage).toBe("needSeat");
     expect(scene.carryingOrder).toBe(true);
+  });
+});
+
+describe("pause/settings smoke", () => {
+  function makeMenuSceneHarness() {
+    const scene = new MenuScene();
+    const keyboardListeners = {};
+    const keysByCode = {};
+
+    scene.scale = { width: 1280, height: 720, on: () => {}, off: () => {} };
+    scene.cameras = { main: { setBackgroundColor: () => {} } };
+    scene.scene = { start: () => {}, restart: () => {} };
+    scene.tweens = {
+      add: () => {},
+      stagger: () => 0,
+    };
+    scene.time = { now: 0 };
+    scene.events = { once: () => {} };
+
+    scene.input = {
+      keyboard: {
+        on: (event, cb) => {
+          keyboardListeners[event] = cb;
+        },
+        off: () => {},
+        addKey: (code) => {
+          const key = { code, __justDown: false };
+          keysByCode[code] = key;
+          return key;
+        },
+      },
+    };
+
+    const textObj = {
+      ...makeTextObject(),
+      setDepth() {
+        return this;
+      },
+      setScrollFactor() {
+        return this;
+      },
+      destroy() {},
+    };
+    const rectObj = {
+      ...makeRectObject(),
+      setDepth() {
+        return this;
+      },
+      destroy() {},
+    };
+    const circleObj = {
+      ...makeCircleObject(),
+      destroy() {},
+    };
+
+    scene.add = {
+      text: () => ({ ...textObj }),
+      rectangle: () => ({ ...rectObj }),
+      circle: () => ({ ...circleObj }),
+    };
+
+    scene.create();
+    return { scene, keysByCode, keyboardListeners };
+  }
+
+  it("opens and closes settings overlay via S hotkey polling", () => {
+    const { scene, keysByCode } = makeMenuSceneHarness();
+    const sCode = 83;
+
+    keysByCode[sCode].__justDown = true;
+    scene.update();
+    expect(scene.settingsOverlay).not.toBeNull();
+
+    scene.time.now = 400;
+    keysByCode[sCode].__justDown = true;
+    scene.update();
+    expect(scene.settingsOverlay).toBeNull();
+  });
+
+  it("opens and closes how-to-play overlay via H hotkey polling", () => {
+    const { scene, keysByCode } = makeMenuSceneHarness();
+    const hCode = 72;
+
+    keysByCode[hCode].__justDown = true;
+    scene.update();
+    expect(scene.howToPlayOverlay).not.toBeNull();
+
+    scene.time.now = 400;
+    keysByCode[hCode].__justDown = true;
+    scene.update();
+    expect(scene.howToPlayOverlay).toBeNull();
+  });
+
+  it("pause hotkeys handle ESC resume, R restart, and M menu", () => {
+    const scene = new GameScene();
+    const restartSpy = vi.fn();
+    const startSpy = vi.fn();
+    const resumeSpy = vi.fn(() => {
+      scene.isPaused = false;
+    });
+
+    scene.scene = { restart: restartSpy, start: startSpy };
+    scene.hidePauseOverlay = vi.fn();
+    scene.resumeGame = resumeSpy;
+    scene.shiftLevel = 2;
+    scene.shiftScore = 120;
+    scene.shiftDelivered = 9;
+    scene.shiftNumber = 4;
+
+    scene.isPaused = true;
+    scene.pauseResumeKey = { __justDown: true };
+    scene.pauseRestartKey = { __justDown: false };
+    scene.pauseMainMenuKey = { __justDown: false };
+    scene.handlePauseHotkeys();
+    expect(resumeSpy).toHaveBeenCalledTimes(1);
+
+    scene.isPaused = true;
+    scene.pauseResumeKey.__justDown = false;
+    scene.pauseRestartKey.__justDown = true;
+    scene.handlePauseHotkeys();
+    expect(restartSpy).toHaveBeenCalledTimes(1);
+
+    scene.isPaused = true;
+    scene.pauseRestartKey.__justDown = false;
+    scene.pauseMainMenuKey.__justDown = true;
+    scene.handlePauseHotkeys();
+    expect(startSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("technical and quality hardening", () => {
+  it("cleans up keyboard listeners, timers, and tweens on shutdown", () => {
+    const scene = new GameScene();
+    const keyboardOff = vi.fn();
+    const scaleOff = vi.fn();
+    const removePending = vi.fn();
+    const removeChefHide = vi.fn();
+    const removeReturnToMenu = vi.fn();
+    const removePenaltyHint = vi.fn();
+    const removeComboFlash = vi.fn();
+    const killTweensOf = vi.fn();
+
+    scene.scale = { off: scaleOff };
+    scene.input = { keyboard: { off: keyboardOff } };
+    scene.hidePauseOverlay = vi.fn();
+    scene.onEscKeyDown = vi.fn();
+    scene.onPauseKeyDown = vi.fn();
+    scene.pendingChefAnnouncementEvent = { remove: removePending };
+    scene.hideChefAnnouncementEvent = { remove: removeChefHide };
+    scene.returnToMenuEvent = { remove: removeReturnToMenu };
+    scene.hideRivalPenaltyHintEvent = { remove: removePenaltyHint };
+    scene.hideComboFlashEvent = { remove: removeComboFlash };
+    scene.chefContainer = {};
+    scene.chefBubbleContainer = {};
+    scene.chefSpeechText = {};
+    scene.tweens = { killTweensOf };
+
+    scene.cleanupSceneRuntime();
+
+    expect(scaleOff).toHaveBeenCalledWith("resize", scene.handleScaleResize, scene);
+    expect(keyboardOff).toHaveBeenCalledWith("keydown-ESC", scene.onEscKeyDown, scene);
+    expect(keyboardOff).toHaveBeenCalledWith("keydown-P", scene.onPauseKeyDown, scene);
+    expect(scene.hidePauseOverlay).toHaveBeenCalledTimes(1);
+
+    expect(removePending).toHaveBeenCalledWith(false);
+    expect(removeChefHide).toHaveBeenCalledWith(false);
+    expect(removeReturnToMenu).toHaveBeenCalledWith(false);
+    expect(removePenaltyHint).toHaveBeenCalledWith(false);
+    expect(removeComboFlash).toHaveBeenCalledWith(false);
+
+    expect(scene.pendingChefAnnouncementEvent).toBeNull();
+    expect(scene.hideChefAnnouncementEvent).toBeNull();
+    expect(scene.returnToMenuEvent).toBeNull();
+    expect(scene.hideRivalPenaltyHintEvent).toBeNull();
+    expect(scene.hideComboFlashEvent).toBeNull();
+    expect(killTweensOf).toHaveBeenCalledTimes(3);
+  });
+
+  it("reuses stable pause listener reference across repeated create calls", () => {
+    const scene = new GameScene();
+    const keyboardListeners = {};
+    const keyboardOn = vi.fn((event, cb) => {
+      keyboardListeners[event] = cb;
+    });
+    const keyboardOff = vi.fn();
+    const scaleOn = vi.fn();
+    const scaleOff = vi.fn();
+
+    scene.scale = { width: 1280, height: 720, on: scaleOn, off: scaleOff };
+    scene.cameras = { main: { setBackgroundColor: () => {} } };
+    scene.scene = { start: () => {}, restart: () => {} };
+    scene.events = { once: vi.fn() };
+    scene.time = {
+      now: 0,
+      delayedCall: () => ({ remove: () => {} }),
+    };
+    scene.tweens = {
+      add: () => {},
+      killTweensOf: () => {},
+    };
+    scene.input = {
+      keyboard: {
+        on: keyboardOn,
+        off: keyboardOff,
+        createCursorKeys: () => ({}),
+        addKeys: () => ({}),
+      },
+    };
+    scene.add = {
+      text: () => makeTextObject(),
+      rectangle: () => makeRectObject(),
+      circle: () => makeCircleObject(),
+      ellipse: () => makeRectObject(),
+      triangle: () => makeRectObject(),
+      container: () => makeContainerObject(),
+      image: () => makeImageObject(),
+    };
+    scene.add.graphics = () => makeGraphicsObject();
+
+    scene.create();
+    const firstPauseHandler = scene.onPauseKeyDown;
+    const firstEscHandler = scene.onEscKeyDown;
+
+    scene.create();
+
+    expect(scene.onPauseKeyDown).toBe(firstPauseHandler);
+    expect(scene.onEscKeyDown).toBe(firstEscHandler);
+    expect(keyboardOff).toHaveBeenCalledWith("keydown-P", firstPauseHandler, scene);
+    expect(keyboardOff).toHaveBeenCalledWith("keydown-ESC", firstEscHandler, scene);
+    expect(scaleOff).toHaveBeenCalledWith("resize", scene.handleScaleResize, scene);
+    expect(keyboardListeners["keydown-P"]).toBe(firstPauseHandler);
+  });
+
+  it("keeps frame dispatch within budget under simulated pressure", () => {
+    const scene = new GameScene();
+    scene.roundEnded = false;
+    scene.isPaused = false;
+    scene.updateTimer = () => {};
+    scene.handleMovement = () => {};
+    scene.updatePlayerMotionIntent = () => {};
+    scene.tryStartOrderTimer = () => {};
+    scene.updateRivals = () => {};
+    scene.resolveRivalToRivalBumps = () => {};
+    scene.handleRivalCollisionPenalty = () => {};
+    scene.handleInteractions = () => {};
+    scene.updatePlayerLocationHint = () => {};
+
+    const start = Date.now();
+    for (let i = 0; i < 1200; i += 1) {
+      scene.update(null, 16.67);
+    }
+    const elapsedMs = Date.now() - start;
+
+    expect(elapsedMs).toBeLessThan(250);
+  });
+});
+
+describe("combo chain", () => {
+  it("multiplier stays 1 below tier 1 threshold", () => {
+    const scene = new GameScene();
+    scene.comboCount = 2;
+    expect(scene.getComboMultiplier()).toBe(1);
+  });
+
+  it("applies tier-1 multiplier at threshold", () => {
+    const scene = new GameScene();
+    scene.comboCount = 3;
+    expect(scene.getComboMultiplier()).toBeCloseTo(1.5);
+  });
+
+  it("applies tier-2 multiplier at higher threshold", () => {
+    const scene = new GameScene();
+    scene.comboCount = 5;
+    expect(scene.getComboMultiplier()).toBeCloseTo(2.0);
+  });
+
+  it("resets combo on rival collision penalty", () => {
+    const scene = new GameScene();
+
+    scene.comboCount = 4;
+    scene.roundBumpCount = 0;
+    scene.lastRivalPenaltyAt = -Infinity;
+    scene.remainingTime = 20;
+    scene.orderTimerRunning = true;
+    scene.player = { x: 100, y: 100 };
+    scene.rivals = [{ x: 105, y: 100, radius: 14, stunnedUntil: 0 }];
+    scene.time = { now: 99999 };
+    scene.timerText = { setText: () => {} };
+    scene.showRivalPenaltyHint = () => {};
+
+    scene.rivalBumpDetectedThisFrame = true;
+    scene.handleRivalCollisionPenalty();
+
+    expect(scene.comboCount).toBe(0);
+  });
+
+  it("blue plate twist applies score multiplier", () => {
+    const scene = new GameScene();
+    scene.dayTwist = "blue_plate";
+    scene.comboCount = 0;
+    const mult = scene.getDeliveryScoreMultiplier();
+    expect(mult).toBeCloseTo(1.25);
+  });
+
+  it("blue plate + combo tier-2 stacks multiplier", () => {
+    const scene = new GameScene();
+    scene.dayTwist = "blue_plate";
+    scene.comboCount = 5;
+    const mult = scene.getDeliveryScoreMultiplier();
+    expect(mult).toBeCloseTo(2.5);
+  });
+});
+
+describe("day twist", () => {
+  it("day 3 gives rush hour twist", () => {
+    const scene = new GameScene();
+    expect(scene.getDayTwistForDay(3)).toBe("rush_hour");
+  });
+
+  it("day 5 gives blue plate twist", () => {
+    const scene = new GameScene();
+    expect(scene.getDayTwistForDay(5)).toBe("blue_plate");
+  });
+
+  it("day 7 gives peak service twist", () => {
+    const scene = new GameScene();
+    expect(scene.getDayTwistForDay(7)).toBe("peak_service");
+  });
+
+  it("day 1 and day 2 have no twist", () => {
+    const scene = new GameScene();
+    expect(scene.getDayTwistForDay(1)).toBeNull();
+    expect(scene.getDayTwistForDay(2)).toBeNull();
+  });
+
+  it("getDayTwistLabel returns human-readable labels", () => {
+    const scene = new GameScene();
+    expect(scene.getDayTwistLabel("rush_hour")).toBe("RUSH HOUR");
+    expect(scene.getDayTwistLabel("blue_plate")).toBe("BLUE PLATE SPECIAL");
+    expect(scene.getDayTwistLabel("peak_service")).toBe("PEAK SERVICE");
+    expect(scene.getDayTwistLabel(null)).toBeNull();
+  });
+});
+
+describe("additional layouts", () => {
+  function makeSceneWithArena() {
+    const scene = new GameScene();
+    scene.arenaBounds = { minX: 0, maxX: 1280, minY: 70, maxY: 720 };
+    scene.mazeColumns = [103, 281, 460, 640, 819, 998, 1166];
+    scene.mazeRows = [161, 291, 421, 551, 655];
+    return scene;
+  }
+
+  it("layout 4 returns 9 table positions", () => {
+    const scene = makeSceneWithArena();
+    const positions = scene.getLayout4TablePositions();
+    expect(positions).toHaveLength(9);
+  });
+
+  it("layout 5 returns 9 table positions", () => {
+    const scene = makeSceneWithArena();
+    const positions = scene.getLayout5TablePositions();
+    expect(positions).toHaveLength(9);
+  });
+
+  it("all layout 4 positions have distinct labels", () => {
+    const scene = makeSceneWithArena();
+    const labels = scene.getLayout4TablePositions().map((p) => p.label);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("all layout 5 positions have distinct labels", () => {
+    const scene = makeSceneWithArena();
+    const labels = scene.getLayout5TablePositions().map((p) => p.label);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 });

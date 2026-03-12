@@ -39,7 +39,10 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 - Presentation and UI pass:
 	- Main menu, in-game HUD, and completion scenes use a stronger arcade/SNES-inspired visual treatment
 	- Completion scenes use framed card layouts and keyboard-forward continue prompts
+	- End-of-shift/day summary shows performance grade (S/A/B/C) and best combo streak
+	- Pause overlay (P key) with resume / restart shift / main menu options
 	- HUD remains black-backed in gameplay for maximum readability and layering clarity
+	- Menu includes Settings overlay (volume controls) and a graphical How to Play overlay (icon cards)
 - Maze collision and movement tuning:
 	- Top/bottom/side boundary walls are collidable
 	- Kitchen/pass counter and table/seat colliders block movement
@@ -56,7 +59,16 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 	- `GameScene` sends completed days to `DayCompleteScene`
 	- `ShiftCompleteScene` continues to the next shift within the same day
 	- `DayCompleteScene` starts the next day on the alternate playfield layout
-	- Playfield layout rotates on a non-repeating cadence across three variants
+- Playfield layout rotates on a non-repeating 10-day cadence across five variants (three originals + zigzag + ring)
+	- Per-day gameplay twists:
+		- **Rush Hour** (Day 3): all rivals move 15% faster
+		- **Blue Plate** (Day 5): every delivery scores ×1.25
+		- **Peak Service** (Day 7+): shift timer starts 5 seconds shorter
+	- Combo chain scoring:
+		- Chain 3+ deliveries without getting bumped → **×1.5 multiplier**
+		- Chain 5+ deliveries → **×2.0 multiplier**
+		- Blue Plate and combo multipliers stack multiplicatively
+		- Rival contact immediately resets the combo counter
 	- Queue-linked activation:
 	- Internal queue progression drives the currently active seat target
 	- Queue generation is constrained to selected queue tables for each run
@@ -68,13 +80,24 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 	- Visual swaps can be done by changing manifest paths without scene rewrites
 - Balance instrumentation:
 	- Round-level snapshots log for days 1-10 with delivery pacing, bump count, and round-end reason
-- Lint/test/build baseline with scene smoke coverage
+- Procedural audio:
+	- `AudioManager` generates all SFX via Web Audio API (no external audio files required)
+	- Sounds: pickup, delivery, combo delivery, rival bump, shift complete, low-timer warning
+	- Background music: gameplay-only medium-loud bassline loop (menu intentionally silent)
+	- Per-session volume controls (master + SFX) accessible from the main menu
+- Lint/test/build baseline with scene smoke coverage (70 tests)
 
 ## Controls
 
 - Keyboard: `WASD` or arrow keys
 - Menu start/retry: `ENTER` or `SPACE`
 - `ESC`: return from `GameScene` to `MenuScene`
+- `P`: toggle pause mid-game
+  - `ESC` / `P`: resume
+  - `R`: restart current shift from pause
+  - `M`: return to main menu from pause
+- `S` (Menu): open Settings overlay (volume controls)
+- `H` (Menu): open How to Play overlay
 - Shift/day continue: `SPACE`
 - Shift/day menu exit: `ESC`
 
@@ -91,6 +114,7 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 - `src/main.js` - Phaser entrypoint and scene registration
 - `src/game/config.js` - Shared resolution/scaling config
 - `src/scenes/` - Scene classes and keys
+- `src/audio/AudioManager.js` - Procedural Web Audio API SFX (no external files)
 - `src/ui/tokens.js` - Visual design tokens for placeholders
 - `src/assets/manifest.js` - Asset loading manifest
 - `tests/` - Baseline smoke tests
@@ -124,15 +148,23 @@ Current local validation gate is passing:
 
 ## Milestone
 
-Week 1 success criteria:
+v1.0.0-rc1 success criteria — all passing:
 1. App boots and scene flow is stable.
 2. Placeholder menu and HUD render correctly.
-3. `lint`, `test`, and `build` all pass.
+3. Combo chain, day twists, pause, settings, and how-to-play functional.
+4. Procedural SFX fires on key game events and gameplay bassline loop is active.
+5. Performance grade (S/A/B/C) shown on shift/day complete screens.
+6. `lint`, `test`, and `build` all pass.
 
-## Next Milestone
+## Asset Licensing
 
-Prototype polish and content expansion:
-1. Execute `FINAL_TASKS_CHECKLIST.md` for release-candidate polish.
-2. Add richer round modifiers/objectives beyond pure plate count.
-3. Complete audio/UI icon pass and settings/pause UX.
-4. Run final QA gate (`lint`, `test`, `build`, long-run manual pass).
+All visual assets in `public/assets/placeholders/` are procedurally generated SVG rectangles and shapes — no external artwork or licensed assets are used at this stage. Audio is generated entirely via the Web Audio API.
+
+## Post-Release Patch Backlog
+
+Top candidates for next iteration:
+1. Replace placeholder sprites with final artwork via `src/assets/manifest.js`
+2. Add persistent high-score tracking (localStorage)
+3. Mobile touch / virtual joystick support
+4. Introduce day-specific music tracks via AudioManager
+5. Expand rival AI with patrol variety per twist type
