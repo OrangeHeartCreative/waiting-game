@@ -23,6 +23,11 @@ const LEVEL_TABLE_QUEUE_COUNT = 4;
 const PLAYER_ASSET_KEY = "waiter-player";
 const RIVAL_ASSET_KEY = "waiter-rival";
 const CHEF_ASSET_KEY = "chef";
+const TABLE_ASSET_KEY = "table";
+const HUD_SCORE_ICON_KEY = "hud-score";
+const HUD_TIMER_ICON_KEY = "hud-timer";
+const HUD_TARGET_ICON_KEY = "hud-target";
+const HUD_WARNING_ICON_KEY = "hud-warning";
 const RIVAL_COUNT = 4;
 const RIVAL_SPEED = 150;
 const RIVAL_RADIUS = 14;
@@ -169,6 +174,11 @@ export class GameScene extends Phaser.Scene {
     this.playerMotionStrength = 0;
     this.playerLocationHintText = null;
     this.rivalPenaltyHintText = null;
+    this.scoreHudIcon = null;
+    this.timerHudIcon = null;
+    this.targetHudIcon = null;
+    this.warningHudIcon = null;
+    this.hudDamageFlash = null;
     this.hideRivalPenaltyHintEvent = null;
     this.playerRivalGhostUntil = 0;
     this.returnToMenuEvent = null;
@@ -224,6 +234,8 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(COLORS.background);
 
     this.add.rectangle(width / 2, hudTop, width, hudHeight, 0x000000, 1).setOrigin(0.5, 0).setDepth?.(30);
+    this.hudDamageFlash = this.add.rectangle(width / 2, height / 2, width, height, 0xe45454, 0);
+    this.hudDamageFlash?.setDepth?.(31);
 
     const centerX = width / 2;
     const leftColumnX = centerX - 210;
@@ -232,20 +244,32 @@ export class GameScene extends Phaser.Scene {
     const hudAccentColor = Number.parseInt("F6C453", 16);
 
     // HUD icons: prefer manifest sprites, fallback to simple vector marks in tests/headless.
-    const scoreIcon = this.textures?.exists?.("plate")
-      ? this.add.image(leftColumnX - 26, hudPrimaryY, "plate").setDisplaySize(16, 16)
-      : this.add.circle(leftColumnX - 26, hudPrimaryY, 7, hudAccentColor, 1);
+    const scoreIcon = this.textures?.exists?.(HUD_SCORE_ICON_KEY)
+      ? this.add.image(leftColumnX - 26, hudPrimaryY, HUD_SCORE_ICON_KEY).setDisplaySize(18, 18)
+      : this.textures?.exists?.("plate")
+        ? this.add.image(leftColumnX - 26, hudPrimaryY, "plate").setDisplaySize(16, 16)
+        : this.add.circle(leftColumnX - 26, hudPrimaryY, 7, hudAccentColor, 1);
+    this.scoreHudIcon = scoreIcon;
     scoreIcon?.setDepth?.(32);
 
-    const timerIcon = this.add.circle(centerColumnX - 58, hudPrimaryY, 8, 0x183250, 1).setStrokeStyle?.(2, hudAccentColor);
+    const timerIcon = this.textures?.exists?.(HUD_TIMER_ICON_KEY)
+      ? this.add.image(centerColumnX - 58, hudPrimaryY, HUD_TIMER_ICON_KEY).setDisplaySize(18, 18)
+      : this.add.circle(centerColumnX - 58, hudPrimaryY, 8, 0x183250, 1);
+    this.timerHudIcon = timerIcon;
     timerIcon?.setDepth?.(32);
-    const timerNeedle = this.add.rectangle(centerColumnX - 56, hudPrimaryY - 1, 2, 7, hudAccentColor, 1);
-    timerNeedle?.setDepth?.(33);
+    if (!this.textures?.exists?.(HUD_TIMER_ICON_KEY)) {
+      timerIcon?.setStrokeStyle?.(2, hudAccentColor);
+      const timerNeedle = this.add.rectangle(centerColumnX - 56, hudPrimaryY - 1, 2, 7, hudAccentColor, 1);
+      timerNeedle?.setDepth?.(33);
+    }
 
-    const goalIcon = this.textures?.exists?.("chef")
-      ? this.add.image(rightColumnX - 30, hudPrimaryY, "chef").setDisplaySize(16, 16)
-      : this.add.triangle(rightColumnX - 30, hudPrimaryY, 0, 14, 14, 14, 7, 0, 0x7fe38b, 1).setStrokeStyle?.(1, 0xd8f7e0);
-    goalIcon?.setDepth?.(32);
+    const targetIcon = this.textures?.exists?.(HUD_TARGET_ICON_KEY)
+      ? this.add.image(rightColumnX - 30, hudPrimaryY, HUD_TARGET_ICON_KEY).setDisplaySize(18, 18)
+      : this.textures?.exists?.("chef")
+        ? this.add.image(rightColumnX - 30, hudPrimaryY, "chef").setDisplaySize(16, 16)
+        : this.add.triangle(rightColumnX - 30, hudPrimaryY, 0, 14, 14, 14, 7, 0, 0x7fe38b, 1).setStrokeStyle?.(1, 0xd8f7e0);
+    this.targetHudIcon = targetIcon;
+    targetIcon?.setDepth?.(32);
 
     this.scoreText = this.add.text(leftColumnX, hudPrimaryY, `${this.getTotalScore()}`, {
       fontFamily: "Courier New, monospace",
@@ -308,6 +332,12 @@ export class GameScene extends Phaser.Scene {
     this.rivalPenaltyHintText.setOrigin?.(0.5, 0.5);
     this.rivalPenaltyHintText.setAlpha?.(0);
     this.rivalPenaltyHintText.setDepth?.(32);
+
+    this.warningHudIcon = this.textures?.exists?.(HUD_WARNING_ICON_KEY)
+      ? this.add.image(centerColumnX + 58, hudPrimaryY, HUD_WARNING_ICON_KEY).setDisplaySize(16, 16)
+      : this.add.triangle(centerColumnX + 58, hudPrimaryY, 0, 14, 14, 14, 7, 0, 0xe45454, 1).setStrokeStyle?.(1, 0xffd3d3);
+    this.warningHudIcon?.setDepth?.(32);
+    this.warningHudIcon?.setAlpha?.(0.85);
 
     // Combo flash popup (fades out after each combo delivery)
     this.comboFlashText = this.add.text(width / 2, hudTop + hudHeight + 28, "", {
@@ -548,6 +578,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.hasPlayedTimerWarning && this.remainingTime <= TIMER_LOW_WARNING_SECONDS && this.remainingTime > 0) {
       this.hasPlayedTimerWarning = true;
       AudioManager.onTimerWarning();
+      this.pulseTimerWarning();
     }
 
     if (this.remainingTime <= 0) {
@@ -757,6 +788,7 @@ export class GameScene extends Phaser.Scene {
       this.orderStage = "needSeat";
       this.setPassPickupAvailability(false);
       AudioManager.onPickup();
+      this.pulsePassIndicator();
       return;
     }
 
@@ -782,6 +814,7 @@ export class GameScene extends Phaser.Scene {
       this.scoreText?.setText(`${this.getTotalScore()}`);
       this.updatePersistentHud();
       this.showComboFlash(deliveryMult);
+      this.playDeliveryHudFeedback(targetSeat);
 
       if (this.comboCount >= COMBO_TIER_1_THRESHOLD) {
         AudioManager.onComboDelivery();
@@ -1916,6 +1949,7 @@ export class GameScene extends Phaser.Scene {
     this.roundBumpCount += 1;
     this.comboCount = 0;
     AudioManager.onBump();
+    this.playRivalPenaltyFeedback();
     // Brief grace period lets the player escape instead of getting body-pinned.
     this.playerRivalGhostUntil = now + RIVAL_POST_HIT_ESCAPE_GRACE_MS;
     this.remainingTime = Math.max(0, this.remainingTime - RIVAL_TIME_PENALTY_SECONDS);
@@ -2195,6 +2229,7 @@ export class GameScene extends Phaser.Scene {
     this.orderTimerRunning = false;
     this.setPassPickupAvailability(true);
     this.updateSeatActivationFromQueue();
+    this.pulseDisplay([this.targetHudIcon, this.targetHudText], { scale: 1.12, durationIn: 90, durationOut: 180 });
 
     const tableLabel = seatLabel.slice(0, 1);
     const seatNumber = seatLabel.slice(1);
@@ -2285,6 +2320,7 @@ export class GameScene extends Phaser.Scene {
 
     this.rivalPenaltyHintText.setText?.(`-${secondsLost}`);
     this.rivalPenaltyHintText.setAlpha?.(1);
+    this.pulseDisplay(this.warningHudIcon, { scale: 1.18, durationIn: 100, durationOut: 220 });
 
     if (this.hideRivalPenaltyHintEvent?.remove) {
       this.hideRivalPenaltyHintEvent.remove(false);
@@ -2467,6 +2503,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   createTableVisual(x, y, variant) {
+    if (this.textures?.exists?.(TABLE_ASSET_KEY)) {
+      const table = this.add.image(x, y, TABLE_ASSET_KEY).setDisplaySize(variant.width + 6, variant.height + 6);
+      table.setAlpha?.(0.96);
+      return table;
+    }
+
     // Dark mahogany wood frame
     this.add.rectangle(x, y, variant.width + 6, variant.height + 6, 0x3A1A08, 1);
     // Cream tablecloth face
@@ -3000,6 +3042,72 @@ export class GameScene extends Phaser.Scene {
     const fillAlpha = isReady ? 0.55 : 0.25;
     this.passInteractionVisual.setFillStyle?.(fillColor, fillAlpha);
     this.passInteractionVisual.setStrokeStyle?.(2, strokeColor);
+  }
+
+  pulsePassIndicator() {
+    this.pulseDisplay(this.passInteractionVisual, { scale: 1.2, durationIn: 80, durationOut: 160 });
+  }
+
+  pulseTimerWarning() {
+    this.pulseDisplay([this.timerText, this.timerHudIcon, this.warningHudIcon], {
+      scale: 1.12,
+      durationIn: 90,
+      durationOut: 220,
+    });
+  }
+
+  playDeliveryHudFeedback(targetSeat) {
+    this.pulseDisplay([this.scoreText, this.scoreHudIcon], { scale: 1.16, durationIn: 80, durationOut: 180 });
+    this.pulseDisplay(this.goalHudText, { scale: 1.08, durationIn: 90, durationOut: 200 });
+
+    if (targetSeat?.visual) {
+      targetSeat.visual.setAlpha?.(1);
+      this.pulseDisplay(targetSeat.visual, { scale: 1.2, durationIn: 80, durationOut: 180 });
+    }
+  }
+
+  playRivalPenaltyFeedback() {
+    this.pulseDisplay(this.timerText, { scale: 1.14, durationIn: 70, durationOut: 200 });
+    this.pulseDisplay(this.warningHudIcon, { scale: 1.2, durationIn: 70, durationOut: 210 });
+
+    this.cameras?.main?.shake?.(90, 0.0026);
+
+    if (this.hudDamageFlash && this.tweens?.add) {
+      this.hudDamageFlash.setAlpha?.(0.24);
+      this.tweens.add({
+        targets: this.hudDamageFlash,
+        alpha: 0,
+        duration: 170,
+        ease: "Sine.Out",
+      });
+    }
+  }
+
+  pulseDisplay(targets, options = {}) {
+    if (!this.tweens?.add) {
+      return;
+    }
+
+    const list = (Array.isArray(targets) ? targets : [targets]).filter(Boolean);
+    if (list.length === 0) {
+      return;
+    }
+
+    const scale = options.scale ?? 1.1;
+    const durationIn = options.durationIn ?? 90;
+    const durationOut = options.durationOut ?? 170;
+    this.tweens.add({
+      targets: list,
+      scaleX: scale,
+      scaleY: scale,
+      duration: durationIn,
+      yoyo: true,
+      ease: "Sine.Out",
+      hold: 0,
+      repeat: 0,
+      yoyoEase: "Sine.In",
+      completeDelay: Math.max(0, durationOut - durationIn),
+    });
   }
 
   updatePersistentHud() {

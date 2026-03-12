@@ -2,21 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] — 2026-03-11
+
+### Released
+- Promoted the playable build from release-candidate status to the v1.0.0 release baseline.
+- Finalized and validated the full release scope across gameplay flow, UI polish, procedural audio, and scene stability.
+
+### Validation
+- Manual smoke flow confirmed: `Boot -> Preload -> Menu -> Game -> ShiftComplete/DayComplete -> Game`.
+- Manual stress validation passed with no observed unavoidable fail states from spawn overlap or routing deadlocks.
+- Automated gates passing at release cut: `npm run lint`, `npm run test`, `npm run build`.
+
+### Documentation
+- Updated `README.md` release language and milestone status to v1.0.0.
+- Updated `FINAL_TASKS_CHECKLIST.md` with fully completed in-scope release items.
+
 ## [1.0.0-rc2] — 2026-03-11
 
 ### Changed
 
 **Audio Behavior**
-- Background music scope narrowed to gameplay only.
-- Menu background music is disabled.
-- Gameplay uses a medium-loud bassline loop in `src/audio/AudioManager.js`.
-- Audio unlock now resumes from the menu start input gesture so SFX reliably play during gameplay.
+- Menu background music is enabled with a playful/elegant procedural melody loop in `src/audio/AudioManager.js`.
+- Gameplay retains the medium-loud bassline loop in `src/audio/AudioManager.js`.
+- Transition to gameplay now hard-stops any scheduled menu notes before starting playfield music.
+- Audio unlock resumes from menu input gestures so menu/game music and SFX start reliably after user interaction.
 
 **Menu UX**
 - Restored and stabilized `MenuScene` overlays:
   - Settings overlay (`S`) with master + SFX controls.
   - How to Play overlay (`H`) with graphical, icon-driven instruction cards.
 - How to Play shifted from text-heavy block copy to visual step flow (pickup → deliver → avoid rivals) with pause/twist hints.
+
+**Gameplay Visual Polish**
+- Added a cohesive HUD icon pass for score, timer, target, and warning states.
+- Added manifest-backed table sprite rendering with graceful vector fallback.
+- Added micro-feedback cues in `GameScene`: pickup/delivery pulses, target-callout pulse, timer-warning pulse, and rival-hit flash/shake feedback.
 
 ### Fixed
 - Resolved regression where SFX became silent after menu rollback due to AudioContext not being resumed on start input.
@@ -28,9 +48,10 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 - Updated `README.md` to reflect:
-  - Gameplay-only bassline music policy.
+  - Menu melody + gameplay bassline music behavior.
+  - Cohesive HUD icon and gameplay micro-feedback polish.
   - Graphical How to Play overlay.
-- Updated `FINAL_TASKS_CHECKLIST.md` to mark the background loop/stinger item as complete for current scope.
+- Updated `FINAL_TASKS_CHECKLIST.md` to mark completed polish items (manual validation, visual/icon pass, and micro-feedback pass).
 
 ## [1.0.0-rc1] — 2025-07-13
 

@@ -20,6 +20,7 @@ export class MenuScene extends Phaser.Scene {
     this.howToPlayOverlay = null;
     this.overlayToggleLockedUntil = 0;
     this.lastResizeAt = 0;
+    this.onMenuInputGesture = null;
   }
 
   init() {
@@ -50,7 +51,7 @@ export class MenuScene extends Phaser.Scene {
     this.add.rectangle(width / 2 + titlePanelWidth / 2 - 24, titlePanelY, 14, 64, 0xc8a030, 1);
 
     this.add
-      .text(width / 2, height * 0.28, "WAITING GAME", {
+      .text(width / 2, height * 0.28, "DUMB WAITERS!", {
         fontFamily: "Courier New, monospace",
         fontSize: "66px",
         color: "#f6c453",
@@ -131,6 +132,23 @@ export class MenuScene extends Phaser.Scene {
     this.scale?.on?.("resize", this.onScaleResize, this);
 
     this.events?.once?.("shutdown", this.cleanupSceneSubscriptions, this);
+
+    this.onMenuInputGesture = this.onMenuInputGesture ?? this.handleMenuInputGesture.bind(this);
+    this.input?.keyboard?.off?.("keydown", this.onMenuInputGesture, this);
+    this.input?.off?.("pointerdown", this.onMenuInputGesture, this);
+    this.input?.keyboard?.on?.("keydown", this.onMenuInputGesture, this);
+    this.input?.on?.("pointerdown", this.onMenuInputGesture, this);
+
+    AudioManager.playMenuMusic();
+  }
+
+  handleMenuInputGesture() {
+    if (this.transitioningToGame) {
+      return;
+    }
+
+    AudioManager.resume();
+    AudioManager.playMenuMusic();
   }
 
   handleStartInput() {
@@ -141,6 +159,7 @@ export class MenuScene extends Phaser.Scene {
     this.transitioningToGame = true;
     // Unlock Web Audio on the confirmed user gesture so in-game SFX can play.
     AudioManager.resume();
+    AudioManager.stopMusic();
     this.scene.start(GAME_SCENE_KEY);
   }
 
@@ -482,11 +501,14 @@ export class MenuScene extends Phaser.Scene {
   cleanupSceneSubscriptions() {
     this.input?.keyboard?.off?.("keydown-ENTER", this.onEnterKeyDown, this);
     this.input?.keyboard?.off?.("keydown-SPACE", this.onSpaceKeyDown, this);
+    this.input?.keyboard?.off?.("keydown", this.onMenuInputGesture, this);
+    this.input?.off?.("pointerdown", this.onMenuInputGesture, this);
     this.scale?.off?.("resize", this.onScaleResize, this);
     this.enterKey = null;
     this.spaceKey = null;
     this.settingsKey = null;
     this.howToPlayKey = null;
+    this.onMenuInputGesture = null;
     this.hideSettingsOverlay();
     this.hideHowToPlayOverlay();
   }

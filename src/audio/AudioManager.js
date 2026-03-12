@@ -11,8 +11,132 @@ let _musicVol = 0.7;
 let _musicTimer = null;
 let _musicMode = null;
 let _musicGain = null; // master bus for all music — enables fade-out
-const MENU_MUSIC_ENABLED = false;
+const MENU_MUSIC_ENABLED = true;
 const GAME_MUSIC_ENABLED = true;
+
+const MENU_THEME_BPM = 134;
+const MENU_THEME_VARIANT_BEATS = 32;
+const MENU_THEME_LOOKAHEAD_SECONDS = 0.55;
+const MENU_THEME_SCHEDULER_MS = 120;
+
+const MENU_THEME_VARIANTS = [
+  [
+    { beat: 0.0, midi: 71, len: 0.5, vol: 0.058, type: "square" },
+    { beat: 0.5, midi: 74, len: 0.5, vol: 0.058, type: "square" },
+    { beat: 1.0, midi: 76, len: 1.0, vol: 0.064 },
+    { beat: 2.0, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 2.5, midi: 76, len: 0.5, vol: 0.058 },
+    { beat: 3.0, midi: 74, len: 1.0, vol: 0.056 },
+
+    { beat: 4.0, midi: 76, len: 0.5, vol: 0.060, type: "square" },
+    { beat: 4.5, midi: 79, len: 0.5, vol: 0.063, type: "square" },
+    { beat: 5.0, midi: 81, len: 1.0, vol: 0.069 },
+    { beat: 6.0, midi: 79, len: 0.5, vol: 0.064 },
+    { beat: 6.5, midi: 78, len: 0.5, vol: 0.062 },
+    { beat: 7.0, midi: 76, len: 1.0, vol: 0.058 },
+
+    { beat: 8.0, midi: 74, len: 0.5, vol: 0.055 },
+    { beat: 8.5, midi: 76, len: 0.5, vol: 0.058 },
+    { beat: 9.0, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 9.5, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 10.0, midi: 83, len: 1.0, vol: 0.072 },
+    { beat: 11.0, midi: 81, len: 1.0, vol: 0.067 },
+
+    { beat: 12.0, midi: 79, len: 0.5, vol: 0.064 },
+    { beat: 12.5, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 13.0, midi: 76, len: 0.5, vol: 0.059 },
+    { beat: 13.5, midi: 74, len: 0.5, vol: 0.056 },
+    { beat: 14.0, midi: 73, len: 1.0, vol: 0.054 },
+    { beat: 15.0, midi: 74, len: 1.0, vol: 0.056 },
+
+    { beat: 16.0, midi: 76, len: 0.5, vol: 0.061 },
+    { beat: 16.5, midi: 79, len: 0.5, vol: 0.064 },
+    { beat: 17.0, midi: 81, len: 0.5, vol: 0.069 },
+    { beat: 17.5, midi: 83, len: 0.5, vol: 0.072 },
+    { beat: 18.0, midi: 85, len: 1.0, vol: 0.076 },
+    { beat: 19.0, midi: 83, len: 1.0, vol: 0.071 },
+
+    { beat: 20.0, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 20.5, midi: 79, len: 0.5, vol: 0.064 },
+    { beat: 21.0, midi: 78, len: 1.0, vol: 0.061 },
+    { beat: 22.0, midi: 76, len: 0.5, vol: 0.059 },
+    { beat: 22.5, midi: 78, len: 0.5, vol: 0.060 },
+    { beat: 23.0, midi: 79, len: 1.0, vol: 0.063 },
+
+    { beat: 24.0, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 24.5, midi: 83, len: 0.5, vol: 0.071 },
+    { beat: 25.0, midi: 85, len: 1.0, vol: 0.075 },
+    { beat: 26.0, midi: 83, len: 0.5, vol: 0.071 },
+    { beat: 26.5, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 27.0, midi: 79, len: 1.0, vol: 0.063 },
+
+    { beat: 28.0, midi: 78, len: 0.5, vol: 0.060 },
+    { beat: 28.5, midi: 76, len: 0.5, vol: 0.058 },
+    { beat: 29.0, midi: 74, len: 0.5, vol: 0.055 },
+    { beat: 29.5, midi: 76, len: 0.5, vol: 0.057 },
+    { beat: 30.0, midi: 73, len: 0.5, vol: 0.053 },
+    { beat: 30.5, midi: 71, len: 0.5, vol: 0.050 },
+    { beat: 31.0, midi: 69, len: 1.0, vol: 0.052, type: "square" },
+  ],
+  [
+    { beat: 0.0, midi: 74, len: 0.5, vol: 0.058, type: "square" },
+    { beat: 0.5, midi: 76, len: 0.5, vol: 0.061, type: "square" },
+    { beat: 1.0, midi: 78, len: 1.0, vol: 0.064 },
+    { beat: 2.0, midi: 81, len: 0.5, vol: 0.069 },
+    { beat: 2.5, midi: 79, len: 0.5, vol: 0.064 },
+    { beat: 3.0, midi: 76, len: 1.0, vol: 0.058 },
+
+    { beat: 4.0, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 4.5, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 5.0, midi: 83, len: 1.0, vol: 0.072 },
+    { beat: 6.0, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 6.5, midi: 79, len: 0.5, vol: 0.064 },
+    { beat: 7.0, midi: 78, len: 1.0, vol: 0.061 },
+
+    { beat: 8.0, midi: 76, len: 0.5, vol: 0.058 },
+    { beat: 8.5, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 9.0, midi: 79, len: 0.5, vol: 0.063 },
+    { beat: 9.5, midi: 83, len: 0.5, vol: 0.071 },
+    { beat: 10.0, midi: 86, len: 1.0, vol: 0.078 },
+    { beat: 11.0, midi: 83, len: 1.0, vol: 0.071 },
+
+    { beat: 12.0, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 12.5, midi: 79, len: 0.5, vol: 0.064 },
+    { beat: 13.0, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 13.5, midi: 76, len: 0.5, vol: 0.058 },
+    { beat: 14.0, midi: 74, len: 1.0, vol: 0.055 },
+    { beat: 15.0, midi: 73, len: 1.0, vol: 0.053 },
+
+    { beat: 16.0, midi: 74, len: 0.5, vol: 0.055 },
+    { beat: 16.5, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 17.0, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 17.5, midi: 84, len: 0.5, vol: 0.074 },
+    { beat: 18.0, midi: 88, len: 1.0, vol: 0.081 },
+    { beat: 19.0, midi: 86, len: 1.0, vol: 0.078 },
+
+    { beat: 20.0, midi: 84, len: 0.5, vol: 0.074 },
+    { beat: 20.5, midi: 83, len: 0.5, vol: 0.071 },
+    { beat: 21.0, midi: 81, len: 1.0, vol: 0.067 },
+    { beat: 22.0, midi: 79, len: 0.5, vol: 0.063 },
+    { beat: 22.5, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 23.0, midi: 76, len: 1.0, vol: 0.058 },
+
+    { beat: 24.0, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 24.5, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 25.0, midi: 84, len: 0.5, vol: 0.074 },
+    { beat: 25.5, midi: 86, len: 0.5, vol: 0.078 },
+    { beat: 26.0, midi: 88, len: 1.0, vol: 0.082, type: "square" },
+    { beat: 27.0, midi: 86, len: 1.0, vol: 0.077 },
+
+    { beat: 28.0, midi: 84, len: 0.5, vol: 0.073 },
+    { beat: 28.5, midi: 81, len: 0.5, vol: 0.067 },
+    { beat: 29.0, midi: 78, len: 0.5, vol: 0.061 },
+    { beat: 29.5, midi: 76, len: 0.5, vol: 0.058 },
+    { beat: 30.0, midi: 74, len: 0.5, vol: 0.055 },
+    { beat: 30.5, midi: 71, len: 0.5, vol: 0.050 },
+    { beat: 31.0, midi: 69, len: 1.0, vol: 0.052, type: "square" },
+  ],
+];
 
 function getMusicBusTargetGain() {
   return Math.max(1 / 10000, _masterVol * _musicVol);
@@ -128,86 +252,43 @@ function playMusicNote(freq, dur, type = "triangle", vol = 0.08, when = null) {
   }
 }
 
-function startMenuWaltzMelody() {
+function midiToFreq(midi) {
+  return 440 * 2 ** ((midi - 69) / 12);
+}
+
+function scheduleMenuThemeVariant(startAt, variant) {
+  const beatDur = 60 / MENU_THEME_BPM;
+  variant.forEach((note) => {
+    const when = startAt + note.beat * beatDur;
+    const duration = Math.max(0.12, note.len * beatDur - 0.03);
+    playMusicNote(midiToFreq(note.midi), duration, note.type ?? "triangle", note.vol, when);
+  });
+}
+
+function startMenuThemeLoop() {
   const ctx = getCtx();
   if (!ctx) {
     return;
   }
 
-  // Sung waltz in A major, 66 BPM — melody only, plays once through.
-  // All notes are pre-scheduled using Web Audio's sample-accurate `when`
-  // clock, so timing is exact and never drifts. A single cleanup timeout
-  // fires after the full piece finishes (~45 s).
-  //
-  // Four vocal phrases, each followed by a full-bar breath rest.
-  // Dynamic arc: soft open → lyrical answer → D6 climax → resolve home.
+  const beatDur = 60 / MENU_THEME_BPM;
+  const variantDuration = MENU_THEME_VARIANT_BEATS * beatDur;
 
-  const q = 60 / 66; // quarter-note duration in seconds (66 BPM ≈ 0.91 s)
+  let nextStartAt = ctx.currentTime + 0.1;
+  let nextVariantIndex = 0;
 
-  // beat   : start time offset from `origin`, in quarter notes
-  // freq   : Hz (A major: A4=440 B4 C#5 D5 E5 F#5 G#5 A5 B5 C#6 D6)
-  // len    : duration in quarter notes
-  // vol    : peak amplitude
-  const notes = [
-    // — Phrase 1 (bars 1–3): soft opening, rise and settle ——————————————
-    { beat:  0, freq: 659.25, len: 1.0, vol: 0.050 }, // E5   — first breath
-    { beat:  1, freq: 880.00, len: 1.85,vol: 0.068 }, // A5   — leap, held across bar
-    { beat:  3, freq: 830.61, len: 0.9, vol: 0.054 }, // G#5  — sigh
-    { beat:  4, freq: 739.99, len: 0.9, vol: 0.050 }, // F#5
-    { beat:  5, freq: 659.25, len: 0.9, vol: 0.047 }, // E5
-    { beat:  6, freq: 587.33, len: 1.85,vol: 0.054 }, // D5   — held
-    { beat:  8, freq: 659.25, len: 0.8, vol: 0.042 }, // E5   — lift before breath
-    // beats 9–11: breath ————————————————————————————————————————————————
-
-    // — Phrase 2 (bars 5–7): lyrical answer, slightly fuller ————————————
-    { beat: 12, freq: 440.00, len: 0.9, vol: 0.050 }, // A4   — low tonic answer
-    { beat: 13, freq: 554.37, len: 0.9, vol: 0.056 }, // C#5  — warm lift
-    { beat: 14, freq: 659.25, len: 1.85,vol: 0.065 }, // E5   — rise, held
-    { beat: 16, freq: 739.99, len: 0.9, vol: 0.062 }, // F#5  — reaching
-    { beat: 17, freq: 659.25, len: 0.9, vol: 0.058 }, // E5
-    { beat: 18, freq: 587.33, len: 1.85,vol: 0.062 }, // D5   — held
-    { beat: 20, freq: 554.37, len: 0.8, vol: 0.048 }, // C#5  — lean before breath
-    // beats 21–23: breath ————————————————————————————————————————————————
-
-    // — Phrase 3 (bars 9–12): build to D6 peak ——————————————————————————
-    { beat: 24, freq: 659.25,  len: 0.9, vol: 0.062 }, // E5   — same shape, louder
-    { beat: 25, freq: 739.99,  len: 0.9, vol: 0.068 }, // F#5
-    { beat: 26, freq: 880.00,  len: 0.9, vol: 0.074 }, // A5   — leap
-    { beat: 27, freq: 987.77,  len: 1.85,vol: 0.077 }, // B5   — soar, held
-    { beat: 29, freq: 1108.73, len: 0.9, vol: 0.079 }, // C#6  — step to summit
-    { beat: 30, freq: 1174.66, len: 1.85,vol: 0.083 }, // D6   — PEAK, held
-    { beat: 32, freq: 987.77,  len: 0.9, vol: 0.070 }, // B5   — begin descent
-    { beat: 33, freq: 880.00,  len: 1.85,vol: 0.064 }, // A5   — settle, held
-    // beat 35: breath ————————————————————————————————————————————————————
-
-    // — Phrase 4 (bars 13–16): gentle resolution home ————————————————————
-    { beat: 36, freq: 739.99, len: 0.9, vol: 0.059 }, // F#5  — descent begins
-    { beat: 37, freq: 659.25, len: 1.85,vol: 0.055 }, // E5   — held
-    { beat: 39, freq: 587.33, len: 0.9, vol: 0.051 }, // D5
-    { beat: 40, freq: 554.37, len: 1.85,vol: 0.050 }, // C#5  — held
-    { beat: 42, freq: 493.88, len: 0.9, vol: 0.046 }, // B4   — deepest
-    { beat: 43, freq: 554.37, len: 0.9, vol: 0.050 }, // C#5  — small uplift
-    { beat: 44, freq: 659.25, len: 0.9, vol: 0.054 }, // E5   — penultimate swell
-    { beat: 45, freq: 440.00, len: 2.8, vol: 0.057 }, // A4   — home, full bar, fade
-  ];
-
-  const origin = ctx.currentTime + 0.05; // small look-ahead so beat 0 never clips
-
-  notes.forEach((n) => {
-    const when = origin + n.beat * q;
-    const dur  = Math.max(0.15, n.len * q - 0.10);
-
-    // Approach from just below the target pitch on held downbeats (beats 0,3,6…)
-    // — simulates a singer settling into the note.
-    if (n.len >= 1.5 && Math.round(n.beat) % 3 === 0) {
-      playMusicNote(n.freq * 0.974, 0.04, "sine", n.vol * 0.18, when);
+  const scheduler = () => {
+    const now = ctx.currentTime;
+    while (nextStartAt <= now + MENU_THEME_LOOKAHEAD_SECONDS) {
+      const variant = MENU_THEME_VARIANTS[nextVariantIndex];
+      scheduleMenuThemeVariant(nextStartAt, variant);
+      nextStartAt += variantDuration;
+      nextVariantIndex = (nextVariantIndex + 1) % MENU_THEME_VARIANTS.length;
     }
-    playMusicNote(n.freq, dur, "triangle", n.vol, when + 0.03);
-  });
+  };
 
-  // Cleanup: mark the timer slot as idle once the last note has decayed.
-  const totalMs = (48 * q + 0.5) * 1000;
-  _musicTimer = setTimeout(() => { _musicTimer = null; _musicMode = null; }, totalMs);
+  scheduler();
+  _musicTimer = setInterval(scheduler, MENU_THEME_SCHEDULER_MS);
 }
 
 function startGameBassLoop() {
@@ -260,7 +341,7 @@ function startMusic(mode) {
   }
 
   if (mode === "menu") {
-    startMenuWaltzMelody();
+    startMenuThemeLoop();
     return;
   }
 
@@ -315,10 +396,21 @@ export const AudioManager = {
   stopMusic() {
     clearMusicTimer();
     _musicMode = null;
-    // Reset gain bus so next music starts at configured volume.
+    // Hard-cut any already-scheduled notes by disconnecting the current bus.
+    // Scheduled oscillators keep playing unless their output path is removed.
     if (_musicGain) {
       try { _musicGain.gain.cancelScheduledValues(0); } catch { /* ignore */ }
-      try { _musicGain.gain.setValueAtTime(getMusicBusTargetGain(), getCtx()?.currentTime ?? 0); } catch { /* ignore */ }
+      try { _musicGain.disconnect(); } catch { /* ignore */ }
+      _musicGain = null;
+    }
+
+    // Recreate a fresh bus at the configured level for the next track.
+    const ctx = getCtx();
+    if (ctx) {
+      const bus = getMusicGain();
+      if (bus) {
+        try { bus.gain.setValueAtTime(getMusicBusTargetGain(), ctx.currentTime); } catch { /* ignore */ }
+      }
     }
   },
 

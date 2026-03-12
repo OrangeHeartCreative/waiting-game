@@ -1,4 +1,4 @@
-# Waiting Game
+# Dumb Waiters!
 
 HTML5 game built with Phaser 3 and Vite.
 
@@ -12,7 +12,7 @@ HTML5 game built with Phaser 3 and Vite.
 
 ## Current Scope
 
-This repository currently provides a playable prototype on top of the Week 1 scaffold:
+This repository currently provides a playable v1.0.0 release on top of the Week 1 scaffold:
 - Scene lifecycle (`Boot -> Preload -> Menu -> Game -> ShiftComplete / DayComplete`)
 - Playable waiter loop in `GameScene`:
 	- Move with `WASD`/arrow keys
@@ -38,11 +38,13 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 	- Rival/player contact now applies a small rival bounceback nudge to reduce sticky body overlap
 - Presentation and UI pass:
 	- Main menu, in-game HUD, and completion scenes use a stronger arcade/SNES-inspired visual treatment
+	- Gameplay HUD now uses cohesive iconography for score, timer, target, and warning states
 	- Completion scenes use framed card layouts and keyboard-forward continue prompts
 	- End-of-shift/day summary shows performance grade (S/A/B/C) and best combo streak
 	- Pause overlay (P key) with resume / restart shift / main menu options
 	- HUD remains black-backed in gameplay for maximum readability and layering clarity
 	- Menu includes Settings overlay (volume controls) and a graphical How to Play overlay (icon cards)
+	- Micro-feedback polish added: delivery/pickup pulses, timer warning pulse, and rival-hit flash/shake cues
 - Maze collision and movement tuning:
 	- Top/bottom/side boundary walls are collidable
 	- Kitchen/pass counter and table/seat colliders block movement
@@ -76,6 +78,7 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 - Manifest-driven visual placeholders:
 	- Placeholder sprites load from `src/assets/manifest.js` via `PreloadScene`
 	- `GameScene` consumes manifest keys (player/table placeholders)
+	- HUD icons (`hud-score`, `hud-timer`, `hud-target`, `hud-warning`) now load from the manifest
 	- `plate` now uses an alternate placeholder asset to validate swap workflow
 	- Visual swaps can be done by changing manifest paths without scene rewrites
 - Balance instrumentation:
@@ -83,9 +86,9 @@ This repository currently provides a playable prototype on top of the Week 1 sca
 - Procedural audio:
 	- `AudioManager` generates all SFX via Web Audio API (no external audio files required)
 	- Sounds: pickup, delivery, combo delivery, rival bump, shift complete, low-timer warning
-	- Background music: gameplay-only medium-loud bassline loop (menu intentionally silent)
+	- Background music: playful/elegant procedural menu melody loop plus gameplay medium-loud bassline loop
 	- Per-session volume controls (master + SFX) accessible from the main menu
-- Lint/test/build baseline with scene smoke coverage (70 tests)
+- Lint/test/build baseline with scene smoke coverage (77 tests)
 
 ## Controls
 
@@ -139,7 +142,7 @@ Flow:
 7. `DayCompleteScene -> GameScene` (next day)
 8. `GameScene -> MenuScene` (time-up or `ESC`)
 
-## Prototype Status
+## Release Status
 
 Current local validation gate is passing:
 1. `npm run lint`
@@ -148,11 +151,11 @@ Current local validation gate is passing:
 
 ## Milestone
 
-v1.0.0-rc1 success criteria — all passing:
+v1.0.0 success criteria — all passing:
 1. App boots and scene flow is stable.
 2. Placeholder menu and HUD render correctly.
 3. Combo chain, day twists, pause, settings, and how-to-play functional.
-4. Procedural SFX fires on key game events and gameplay bassline loop is active.
+4. Procedural SFX fires on key game events; menu melody loop and gameplay bassline loop are active.
 5. Performance grade (S/A/B/C) shown on shift/day complete screens.
 6. `lint`, `test`, and `build` all pass.
 
