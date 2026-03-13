@@ -166,6 +166,7 @@ export class GameScene extends Phaser.Scene {
     this.rivals = [];
     this.rivalPatrolNoGoColliders = [];
     this.queueTableLabels = [];
+    this.calledSeatLabels = new Set();
     this.lastRivalPenaltyAt = -Infinity;
     this.roundStartedAt = 0;
     this.lastKnownScaleSize = null;
@@ -244,11 +245,13 @@ export class GameScene extends Phaser.Scene {
     const hudAccentColor = Number.parseInt("F6C453", 16);
 
     // HUD icons: prefer manifest sprites, fallback to simple vector marks in tests/headless.
+    const scoreIconX = leftColumnX - 26;
+    const scoreValueX = scoreIconX + 14;
     const scoreIcon = this.textures?.exists?.(HUD_SCORE_ICON_KEY)
-      ? this.add.image(leftColumnX - 26, hudPrimaryY, HUD_SCORE_ICON_KEY).setDisplaySize(18, 18)
+      ? this.add.image(scoreIconX, hudPrimaryY, HUD_SCORE_ICON_KEY).setDisplaySize(18, 18)
       : this.textures?.exists?.("plate")
-        ? this.add.image(leftColumnX - 26, hudPrimaryY, "plate").setDisplaySize(16, 16)
-        : this.add.circle(leftColumnX - 26, hudPrimaryY, 7, hudAccentColor, 1);
+        ? this.add.image(scoreIconX, hudPrimaryY, "plate").setDisplaySize(16, 16)
+        : this.add.circle(scoreIconX, hudPrimaryY, 7, hudAccentColor, 1);
     this.scoreHudIcon = scoreIcon;
     scoreIcon?.setDepth?.(32);
 
@@ -271,14 +274,14 @@ export class GameScene extends Phaser.Scene {
     this.targetHudIcon = targetIcon;
     targetIcon?.setDepth?.(32);
 
-    this.scoreText = this.add.text(leftColumnX, hudPrimaryY, `${this.getTotalScore()}`, {
+    this.scoreText = this.add.text(scoreValueX, hudPrimaryY, `${this.getTotalScore()}`, {
       fontFamily: "Courier New, monospace",
       fontSize: "30px",
       color: "#f1f5ff",
       stroke: "#0a1424",
       strokeThickness: 2,
     });
-    this.scoreText.setOrigin?.(0.5, 0.5);
+    this.scoreText.setOrigin?.(0, 0.5);
     this.scoreText.setDepth?.(32);
 
     this.goalHudText = this.add.text(rightColumnX, hudPrimaryY, `${this.layoutPlateGoal}`, {
@@ -2062,7 +2065,8 @@ export class GameScene extends Phaser.Scene {
   createInitialSeatQueue(length) {
     const queue = [];
     while (queue.length < length) {
-      const label = this.pickRandomSeatFromPool();
+      const excludedLabels = new Set([...(this.calledSeatLabels ?? []), ...queue]);
+      const label = this.pickRandomSeatFromPool(excludedLabels);
       if (label) queue.push(label);
     }
     return queue;
@@ -2099,12 +2103,17 @@ export class GameScene extends Phaser.Scene {
 
   // Pick a random seat label with uniform probability per table.
   // Grouping by table first avoids bias toward tables with more surviving seats.
-  pickRandomSeatFromPool() {
+  pickRandomSeatFromPool(excludedLabels = null) {
     const pool = this.getSeatLabelPool();
     if (pool.length === 0) return null;
 
+    const filteredPool = excludedLabels
+      ? pool.filter((label) => !excludedLabels.has(label))
+      : pool;
+    const candidatePool = filteredPool.length > 0 ? filteredPool : pool;
+
     const byTable = new Map();
-    for (const label of pool) {
+    for (const label of candidatePool) {
       const tableLabel = label.slice(0, -1);
       const group = byTable.get(tableLabel) ?? [];
       group.push(label);
@@ -2143,7 +2152,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.nextTargets.shift();
-    const nextSeat = this.pickRandomSeatFromPool();
+    const excludedLabels = new Set([...(this.calledSeatLabels ?? []), ...this.nextTargets]);
+    const nextSeat = this.pickRandomSeatFromPool(excludedLabels);
     if (nextSeat) this.nextTargets.push(nextSeat);
 
     this.remainingTime = this.getRoundDurationSecondsForDay(this.shiftNumber);
@@ -2224,6 +2234,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    this.calledSeatLabels?.add?.(seatLabel);
     this.announcedTargetSeatLabel = seatLabel;
     this.orderAnnouncementActive = true;
     this.orderTimerRunning = false;

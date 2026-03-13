@@ -12,7 +12,7 @@ HTML5 game built with Phaser 3 and Vite.
 
 ## Current Scope
 
-This repository currently provides a playable v1.0.0 release on top of the Week 1 scaffold:
+This repository currently provides a playable v1.0.1 release on top of the Week 1 scaffold:
 - Scene lifecycle (`Boot -> Preload -> Menu -> Game -> ShiftComplete / DayComplete`)
 - Playable waiter loop in `GameScene`:
 	- Move with `WASD`/arrow keys
@@ -74,6 +74,7 @@ This repository currently provides a playable v1.0.0 release on top of the Week 
 	- Queue-linked activation:
 	- Internal queue progression drives the currently active seat target
 	- Queue generation is constrained to selected queue tables for each run
+		- Called seat history rerolls duplicate targets to reduce repetitive seat callouts
 	- Deliveries consume queue entries and refresh chef callouts plus active seat/table highlights
 - Manifest-driven visual placeholders:
 	- Placeholder sprites load from `src/assets/manifest.js` via `PreloadScene`
@@ -112,6 +113,16 @@ This repository currently provides a playable v1.0.0 release on top of the Week 
 - `npm run lint` - Lint JavaScript source files
 - `npm run test` - Run smoke tests
 - `npm run capture:screenshots` - Capture an itch.io screenshot pack (requires dev server running)
+
+## Itch.io Release ZIP
+
+Build and package a browser-ready ZIP for itch.io from local source:
+
+1. `npm run build`
+2. `mkdir -p release`
+3. `cd dist && zip -r ../release/dumb-waiters-v1.0.1-itch.zip .`
+
+The generated archive path is `release/dumb-waiters-v1.0.1-itch.zip`.
 
 ## Itch.io Screenshot Pack
 
@@ -174,7 +185,7 @@ Current local validation gate is passing:
 
 ## Milestone
 
-v1.0.0 success criteria — all passing:
+v1.0.1 success criteria — all passing:
 1. App boots and scene flow is stable.
 2. Placeholder menu and HUD render correctly.
 3. Combo chain, day twists, pause, settings, and how-to-play functional.

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] — 2026-03-13
+
+### Fixed
+- Seat callout queue now tracks previously announced seat labels and rerolls duplicates immediately when selecting the next target.
+- HUD score alignment now grows rightward from a fixed anchor so scores with 4+ digits do not overlap the score icon.
+
+### Validation
+- Automated smoke coverage remains passing: `npm run test`.
+- Production bundle build remains passing: `npm run build`.
+
+### Packaging
+- Produced an itch.io-ready ZIP package from the production build output.
+
 ## [1.0.0] — 2026-03-11
 
 ### Released
