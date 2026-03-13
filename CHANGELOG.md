@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] — 2026-03-13
+
+### Released
+- Finalized the post-1.0 polish pass and promoted the current playable build as the final release baseline.
+
+### Changed
+- Main menu title now uses a custom comic-style procedural logo treatment with layered arcade lettering.
+- Shift complete screen now focuses on centered `SCORE` and `PLATES` stats (grade removed) for clearer summary readability.
+- Day complete and shift/day UI styling has been tightened for stronger visual consistency with the arcade theme.
+- Rival hit penalty indicator in HUD is larger and positioned directly beneath the timer for better readability.
+
+### Fixed
+- Gameplay systems now properly freeze while pause overlay is active (scene timing, tweening, and physics progression halted until resume).
+- Delivery interaction now triggers on direct contact with the highlighted target seat location, improving consistency with seat collider expectations.
+
+### Validation
+- Local gates passing for release cut: `npm run lint`, `npm run test`, `npm run build`.
+
 ## [1.0.1] — 2026-03-13
 
 ### Fixed

@@ -261,7 +261,7 @@ describe("scene flow smoke", () => {
 
     scene.create();
     expect(renderedText).toContain("Press ENTER or SPACE to start");
-    expect(renderedText).toContain("HOW TO MOVE\nWASD or Arrow Keys");
+    expect(renderedText).toContain("[ S ] Settings    [ H ] How to Play");
   });
 
   it("registers ESC transition from game to menu", () => {
@@ -1395,7 +1395,7 @@ describe("scene flow smoke", () => {
 
     const resolved = scene.resolveTableCollision(120, 120, 90, 90);
 
-    expect(resolved).toEqual({ x: 120, y: 90 });
+    expect(resolved).toEqual({ x: 90, y: 90 });
   });
 
   it("treats kitchen door as a movement blocker", () => {

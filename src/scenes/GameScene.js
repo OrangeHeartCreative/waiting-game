@@ -13,24 +13,22 @@ const PLATE_GOAL_INCREASE_PER_DAY = 5;
 const PLATE_GOAL_SOFT_CAP_START_DAY = 5;
 const PLATE_GOAL_SOFT_CAP_INCREASE_PER_DAY = 2;
 const RIVAL_SPEED_INCREASE_PER_DAY = 0.05;
-const PLAYER_SPAWN_COLLISION_RADIUS = 20;
+const PLAYER_SPAWN_COLLISION_RADIUS = 22;
 const PLAYER_SPAWN_TABLE_BUFFER = 4;
 const PLAYER_SPEED = 240;
 const INTERACTION_RADIUS = 34;
 const MIN_INTERACTION_RADIUS = 24;
+const PLAYER_VISUAL_WIDTH = 34;
+const PLAYER_VISUAL_HEIGHT = 50;
 const NEXT_QUEUE_LENGTH = 8;
 const LEVEL_TABLE_QUEUE_COUNT = 4;
-const PLAYER_ASSET_KEY = "waiter-player";
-const RIVAL_ASSET_KEY = "waiter-rival";
-const CHEF_ASSET_KEY = "chef";
-const TABLE_ASSET_KEY = "table";
-const HUD_SCORE_ICON_KEY = "hud-score";
-const HUD_TIMER_ICON_KEY = "hud-timer";
-const HUD_TARGET_ICON_KEY = "hud-target";
-const HUD_WARNING_ICON_KEY = "hud-warning";
+const HUD_FONT_FAMILY = '"Press Start 2P", "Trebuchet MS", sans-serif';
+const HUD_EMPHASIS_FONT_FAMILY = '"Bangers", "Trebuchet MS", sans-serif';
+// Responsive font size: clamped to [min,max] and scaled relative to 1280px reference width.
+const clampPx = (base, min, max, w) => `${Math.max(min, Math.min(max, Math.round(base * (w / 1280))))}px`;
 const RIVAL_COUNT = 4;
 const RIVAL_SPEED = 150;
-const RIVAL_RADIUS = 14;
+const RIVAL_RADIUS = 17;
 const RIVAL_TIME_PENALTY_SECONDS = 1.5;
 const RIVAL_HIT_COOLDOWN_MS = 1400;
 const RIVAL_POST_HIT_ESCAPE_GRACE_MS = 850;
@@ -94,10 +92,12 @@ const PLAYER_SPAWN_SAFE_CHOICES = 4;
 const BOUNDARY_WALL_THICKNESS = 16;
 const CHEF_ANNOUNCE_DISPLAY_MS = 2400;
 const CHEF_POST_DELIVERY_DELAY_MS = 3000;
-const SEAT_PAIR_GAP = 30;
-const SEAT_RING_OFFSET = 18;
-const SEAT_COLLIDER_RADIUS = 13;
+const SEAT_PAIR_GAP = 34;
+const SEAT_RING_OFFSET = 22;
+const SEAT_COLLIDER_RADIUS = 15;
 const RIVAL_PATROL_CLEARANCE = 10;
+const TABLE_SIZE_SCALE = 1.2;
+const TABLE_COLLIDER_PADDING = 8;
 const TABLE_VARIANTS = [
   { width: 112, height: 34, orientation: "horizontal" },
   { width: 34, height: 114, orientation: "vertical" },
@@ -179,6 +179,7 @@ export class GameScene extends Phaser.Scene {
     this.timerHudIcon = null;
     this.targetHudIcon = null;
     this.warningHudIcon = null;
+    this.hudTwistBadge = null;
     this.hudDamageFlash = null;
     this.hideRivalPenaltyHintEvent = null;
     this.playerRivalGhostUntil = 0;
@@ -216,10 +217,11 @@ export class GameScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
     const hudTop = 0;
-    const hudHeight = 72;
+    const hudHeight = 84;
     const hudPrimaryY = 18;
-    const hudSecondaryY = 42;
-    const hudWarningY = 60;
+    const hudSecondaryY = 52;
+    const hudPenaltyY = 42;
+    const hudWarningY = 72;
     const arenaTop = hudTop + hudHeight;
     const arenaHeight = height - arenaTop;
 
@@ -234,49 +236,37 @@ export class GameScene extends Phaser.Scene {
 
     this.cameras.main.setBackgroundColor(COLORS.background);
 
+    this.cameras.main.fadeIn?.(400, 0, 0, 0);
     this.add.rectangle(width / 2, hudTop, width, hudHeight, 0x000000, 1).setOrigin(0.5, 0).setDepth?.(30);
+    this.add.rectangle(width / 2, hudTop + hudHeight, width, 2, 0xf6c453, 0.55).setOrigin(0.5, 0).setDepth?.(30);
     this.hudDamageFlash = this.add.rectangle(width / 2, height / 2, width, height, 0xe45454, 0);
     this.hudDamageFlash?.setDepth?.(31);
 
     const centerX = width / 2;
-    const leftColumnX = centerX - 210;
+    const hudColumnOffset = Math.max(230, Math.min(300, width * 0.23));
+    const leftColumnX = centerX - hudColumnOffset;
     const centerColumnX = centerX;
-    const rightColumnX = centerX + 210;
+    const rightColumnX = centerX + hudColumnOffset;
     const hudAccentColor = Number.parseInt("F6C453", 16);
 
-    // HUD icons: prefer manifest sprites, fallback to simple vector marks in tests/headless.
-    const scoreIconX = leftColumnX - 26;
-    const scoreValueX = scoreIconX + 14;
-    const scoreIcon = this.textures?.exists?.(HUD_SCORE_ICON_KEY)
-      ? this.add.image(scoreIconX, hudPrimaryY, HUD_SCORE_ICON_KEY).setDisplaySize(18, 18)
-      : this.textures?.exists?.("plate")
-        ? this.add.image(scoreIconX, hudPrimaryY, "plate").setDisplaySize(16, 16)
-        : this.add.circle(scoreIconX, hudPrimaryY, 7, hudAccentColor, 1);
+    // HUD icons rendered as vector art so style stays consistent regardless of loaded assets.
+    const scoreIconX = leftColumnX - 54;
+    const scoreValueX = scoreIconX + 26;
+    const scoreIcon = this.createHudPlateIcon(scoreIconX, hudPrimaryY);
     this.scoreHudIcon = scoreIcon;
     scoreIcon?.setDepth?.(32);
 
-    const timerIcon = this.textures?.exists?.(HUD_TIMER_ICON_KEY)
-      ? this.add.image(centerColumnX - 58, hudPrimaryY, HUD_TIMER_ICON_KEY).setDisplaySize(18, 18)
-      : this.add.circle(centerColumnX - 58, hudPrimaryY, 8, 0x183250, 1);
+    const timerIcon = this.createHudTimerIcon(centerColumnX - 84, hudPrimaryY, hudAccentColor);
     this.timerHudIcon = timerIcon;
     timerIcon?.setDepth?.(32);
-    if (!this.textures?.exists?.(HUD_TIMER_ICON_KEY)) {
-      timerIcon?.setStrokeStyle?.(2, hudAccentColor);
-      const timerNeedle = this.add.rectangle(centerColumnX - 56, hudPrimaryY - 1, 2, 7, hudAccentColor, 1);
-      timerNeedle?.setDepth?.(33);
-    }
 
-    const targetIcon = this.textures?.exists?.(HUD_TARGET_ICON_KEY)
-      ? this.add.image(rightColumnX - 30, hudPrimaryY, HUD_TARGET_ICON_KEY).setDisplaySize(18, 18)
-      : this.textures?.exists?.("chef")
-        ? this.add.image(rightColumnX - 30, hudPrimaryY, "chef").setDisplaySize(16, 16)
-        : this.add.triangle(rightColumnX - 30, hudPrimaryY, 0, 14, 14, 14, 7, 0, 0x7fe38b, 1).setStrokeStyle?.(1, 0xd8f7e0);
+    const targetIcon = this.createHudTargetIcon(rightColumnX - 56, hudPrimaryY);
     this.targetHudIcon = targetIcon;
     targetIcon?.setDepth?.(32);
 
     this.scoreText = this.add.text(scoreValueX, hudPrimaryY, `${this.getTotalScore()}`, {
-      fontFamily: "Courier New, monospace",
-      fontSize: "30px",
+      fontFamily: HUD_FONT_FAMILY,
+      fontSize: "20px",
       color: "#f1f5ff",
       stroke: "#0a1424",
       strokeThickness: 2,
@@ -285,7 +275,7 @@ export class GameScene extends Phaser.Scene {
     this.scoreText.setDepth?.(32);
 
     this.goalHudText = this.add.text(rightColumnX, hudPrimaryY, `${this.layoutPlateGoal}`, {
-      fontFamily: "Courier New, monospace",
+      fontFamily: HUD_EMPHASIS_FONT_FAMILY,
       fontSize: "30px",
       color: "#f6c453",
       stroke: "#251012",
@@ -295,8 +285,8 @@ export class GameScene extends Phaser.Scene {
     this.goalHudText.setDepth?.(32);
 
     this.targetHudText = this.add.text(rightColumnX, hudSecondaryY, "--", {
-      fontFamily: "Courier New, monospace",
-      fontSize: "24px",
+      fontFamily: HUD_FONT_FAMILY,
+      fontSize: "15px",
       color: "#d8e3f6",
       stroke: "#0a1424",
       strokeThickness: 1,
@@ -305,8 +295,8 @@ export class GameScene extends Phaser.Scene {
     this.targetHudText.setDepth?.(32);
 
     this.shiftLevelText = this.add.text(leftColumnX, hudSecondaryY, this.formatHudShiftValue(), {
-      fontFamily: "Courier New, monospace",
-      fontSize: "24px",
+      fontFamily: HUD_FONT_FAMILY,
+      fontSize: "15px",
       color: "#b9c6dd",
       stroke: "#0a1424",
       strokeThickness: 1,
@@ -316,8 +306,8 @@ export class GameScene extends Phaser.Scene {
 
     this.timerText = this.add
       .text(centerColumnX, hudPrimaryY, `${this.formatTime(this.remainingTime)}`, {
-        fontFamily: "Courier New, monospace",
-        fontSize: "32px",
+        fontFamily: HUD_FONT_FAMILY,
+        fontSize: "20px",
         color: "#fff0c7",
         stroke: "#241112",
         strokeThickness: 2,
@@ -325,27 +315,25 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5);
     this.timerText.setDepth?.(32);
 
-    this.rivalPenaltyHintText = this.add.text(width / 2, hudWarningY, "", {
-      fontFamily: "Courier New, monospace",
-      fontSize: "16px",
+    this.rivalPenaltyHintText = this.add.text(width / 2, hudPenaltyY, "", {
+      fontFamily: HUD_EMPHASIS_FONT_FAMILY,
+      fontSize: "24px",
       color: "#f6c453",
       stroke: "#2d1315",
-      strokeThickness: 1,
+      strokeThickness: 2,
     });
     this.rivalPenaltyHintText.setOrigin?.(0.5, 0.5);
     this.rivalPenaltyHintText.setAlpha?.(0);
     this.rivalPenaltyHintText.setDepth?.(32);
 
-    this.warningHudIcon = this.textures?.exists?.(HUD_WARNING_ICON_KEY)
-      ? this.add.image(centerColumnX + 58, hudPrimaryY, HUD_WARNING_ICON_KEY).setDisplaySize(16, 16)
-      : this.add.triangle(centerColumnX + 58, hudPrimaryY, 0, 14, 14, 14, 7, 0, 0xe45454, 1).setStrokeStyle?.(1, 0xffd3d3);
+    this.warningHudIcon = this.createHudWarningIcon(centerColumnX + 84, hudPrimaryY);
     this.warningHudIcon?.setDepth?.(32);
     this.warningHudIcon?.setAlpha?.(0.85);
 
     // Combo flash popup (fades out after each combo delivery)
     this.comboFlashText = this.add.text(width / 2, hudTop + hudHeight + 28, "", {
-      fontFamily: "Courier New, monospace",
-      fontSize: "17px",
+      fontFamily: HUD_EMPHASIS_FONT_FAMILY,
+      fontSize: "24px",
       color: "#f6c453",
       stroke: "#2d1315",
       strokeThickness: 3,
@@ -357,15 +345,15 @@ export class GameScene extends Phaser.Scene {
     // Day-twist badge displayed in HUD when a special modifier is active
     const twistHudValue = this.getDayTwistHudValue(this.dayTwist);
     if (twistHudValue) {
-      const twistBadge = this.add.text(centerColumnX + 150, hudWarningY, `★ ${twistHudValue}`, {
-        fontFamily: "Courier New, monospace",
-        fontSize: "14px",
+      this.hudTwistBadge = this.add.text(centerColumnX + 170, hudWarningY, `★ ${twistHudValue}`, {
+        fontFamily: HUD_FONT_FAMILY,
+        fontSize: "12px",
         color: "#ffe08a",
         stroke: "#1a0608",
         strokeThickness: 1,
       });
-      twistBadge.setOrigin?.(0.5, 0.5);
-      twistBadge.setDepth?.(32);
+      this.hudTwistBadge.setOrigin?.(0.5, 0.5);
+      this.hudTwistBadge.setDepth?.(32);
     }
 
     this.arenaBounds = {
@@ -415,7 +403,12 @@ export class GameScene extends Phaser.Scene {
     this.tableColliders = this.tableZones.map((zone) => zone.collider);
     this.rivalPatrolNoGoColliders = this.createRivalPatrolNoGoColliders();
     this.seatZones = this.createSeatZones();
-    this.seatColliders = this.seatZones.map((seat) => ({ type: "circle", x: seat.x, y: seat.y, radius: 13 }));
+    this.seatColliders = this.seatZones.map((seat) => ({
+      type: "circle",
+      x: seat.x,
+      y: seat.y,
+      radius: SEAT_COLLIDER_RADIUS,
+    }));
     this.boundaryColliders = this.createBoundaryColliders();
     this.initializeQueueTables();
     this.roundStartedAt = this.time?.now ?? Date.now();
@@ -428,7 +421,7 @@ export class GameScene extends Phaser.Scene {
     this.player = this.createPlayerVisual(spawnPoint.x, spawnPoint.y);
     this.playerLastPosition = { x: this.player.x, y: this.player.y };
 
-    this.playerLocationHintText = this.add.text(spawnPoint.x, spawnPoint.y - 34, "", {
+    this.playerLocationHintText = this.add.text(spawnPoint.x, spawnPoint.y - 40, "", {
       fontFamily: "Verdana, sans-serif",
       fontSize: "12px",
       color: "#fff4c9",
@@ -442,6 +435,22 @@ export class GameScene extends Phaser.Scene {
     this.nextTargets = this.createInitialSeatQueue(NEXT_QUEUE_LENGTH);
     this.scheduleNextTargetAnnouncement();
     this.updatePersistentHud();
+    this.refreshHudLayout();
+
+    // Web fonts can resolve after scene create; trigger a secondary HUD reflow
+    // so icon spacing remains correct with final glyph metrics.
+    if (globalThis.document?.fonts?.ready?.then) {
+      globalThis.document.fonts.ready.then(() => {
+        this.time?.delayedCall?.(0, () => {
+          if (this.scene?.isActive?.()) {
+            this.scoreText?.setText?.(`${this.getTotalScore()}`);
+            this.timerText?.setText?.(`${this.formatTime(this.remainingTime)}`);
+            this.updatePersistentHud();
+            this.refreshHudLayout();
+          }
+        });
+      });
+    }
 
     this.cursors = this.input?.keyboard?.createCursorKeys();
     this.wasd = this.input?.keyboard?.addKeys("W,A,S,D");
@@ -472,6 +481,7 @@ export class GameScene extends Phaser.Scene {
     this.scale?.off?.("resize", this.handleScaleResize, this);
     this.input?.keyboard?.off?.("keydown-ESC", this.onEscKeyDown, this);
     this.input?.keyboard?.off?.("keydown-P", this.onPauseKeyDown, this);
+    this.setGameplayFrozen(false);
     this.hidePauseOverlay();
 
     if (this.pendingChefAnnouncementEvent?.remove) {
@@ -653,7 +663,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  resolveRivalCollision(nextX, nextY, previousX, previousY, bodyRadius = 14) {
+  resolveRivalCollision(nextX, nextY, previousX, previousY, bodyRadius = PLAYER_SPAWN_COLLISION_RADIUS) {
     if (!this.rivals?.length) {
       return { x: nextX, y: nextY };
     }
@@ -700,7 +710,7 @@ export class GameScene extends Phaser.Scene {
     return this.resolveCollisionAgainstColliders(nextX, nextY, previousX, previousY, rivalColliders, bodyRadius);
   }
 
-  resolveTableCollision(nextX, nextY, previousX, previousY, bodyRadius = 14) {
+  resolveTableCollision(nextX, nextY, previousX, previousY, bodyRadius = PLAYER_SPAWN_COLLISION_RADIUS) {
     const colliders = [...(this.tableColliders ?? []), ...(this.seatColliders ?? []), ...(this.boundaryColliders ?? [])];
     if (this.kitchenDoorCollider) {
       colliders.push(this.kitchenDoorCollider);
@@ -2021,9 +2031,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   findDeliverableSeat() {
-    const radius = this.getCurrentInteractionRadius() + 4;
     const currentTarget = this.getCurrentTargetSeatLabel();
-    return this.seatZones.find((seat) => seat.isActive && seat.label === currentTarget && this.isAdjacent(seat, radius));
+    if (!currentTarget) {
+      return null;
+    }
+
+    const seatColliderRadius = this.seatColliders?.[0]?.radius ?? (SEAT_COLLIDER_RADIUS + 2);
+    const touchRadius = PLAYER_SPAWN_COLLISION_RADIUS + seatColliderRadius + 6;
+    return this.seatZones.find((seat) => seat.isActive && seat.label === currentTarget && this.isAdjacent(seat, touchRadius));
   }
 
   isAdjacent(zone, radius) {
@@ -2195,9 +2210,7 @@ export class GameScene extends Phaser.Scene {
     this.chefEmergeY = this.pickupZone.y - 6;
     const chefX = this.pickupZone.x;
 
-    const chefVisual = this.textures?.exists(CHEF_ASSET_KEY)
-      ? this.add.image(0, 16, CHEF_ASSET_KEY).setDisplaySize(42, 58)
-      : this.add.rectangle(0, 16, 54, 54, 0xf8f3e7, 1).setStrokeStyle(2, 0x2f3d55);
+    const chefVisual = this.createCartoonChefAvatar(0, 16);
 
     const bubbleShadow = this.add.rectangle(3, -56, 236, 70, 0x20314d, 0.38);
     const bubbleBg = this.add.rectangle(0, -58, 232, 66, 0xf8fbff, 1).setStrokeStyle(2, 0x4d6388);
@@ -2486,15 +2499,122 @@ export class GameScene extends Phaser.Scene {
     const secs = clamped % 60;
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }
+  
+  addCircleFallback(x, y, radius, color, alpha = 1) {
+    return this.add.circle?.(x, y, radius, color, alpha)
+      ?? this.add.rectangle(x, y, radius * 2, radius * 2, color, alpha);
+  }
+  
+  addEllipseFallback(x, y, width, height, color, alpha = 1) {
+    return this.add.ellipse?.(x, y, width, height, color, alpha)
+      ?? this.add.rectangle(x, y, width, height, color, alpha);
+  }
+  
+  addStarFallback(x, y, points, innerRadius, outerRadius, color, alpha = 1) {
+    return this.add.star?.(x, y, points, innerRadius, outerRadius, color, alpha)
+      ?? this.add.rectangle(x, y, outerRadius * 2, outerRadius * 2, color, alpha);
+  }
+
+  addArcFallback(x, y, radius, startAngle, endAngle, anticlockwise, color, alpha = 1) {
+    return this.add.arc?.(x, y, radius, startAngle, endAngle, anticlockwise, color, alpha)
+      ?? this.add.rectangle(x, y, radius * 2, 2, color, alpha);
+  }
+
+  addContainerFallback(x, y, children = []) {
+    return this.add.container?.(x, y, children)
+      ?? this.add.rectangle(x, y, 1, 1, 0x000000, 0);
+  }
 
   createPlayerVisual(x, y) {
-    if (this.textures?.exists(PLAYER_ASSET_KEY)) {
-      return this.add.image(x, y, PLAYER_ASSET_KEY).setDisplaySize(28, 42);
-    }
+    return this.createCartoonWaiterAvatar(x, y, {
+      shirtColor: 0x2e80ff,
+      apronColor: 0xf7f2e8,
+      accentColor: 0x163767,
+    });
+  }
 
-    const player = this.add.circle(x, y, 20, COLORS.accent, 1);
-    player.setStrokeStyle?.(3, COLORS.text);
-    return player;
+  createCartoonWaiterAvatar(x, y, { shirtColor, apronColor, accentColor }) {
+    const head = this.addCircleFallback(0, -16, 10, 0xffd2a8, 1).setStrokeStyle?.(2, 0x5a2b1f);
+    const hair = this.addEllipseFallback(0, -22, 18, 10, 0x3e2723, 1);
+    const leftEye = this.addCircleFallback(-3, -16, 1.4, 0x1f1f1f, 1);
+    const rightEye = this.addCircleFallback(3, -16, 1.4, 0x1f1f1f, 1);
+    const smile = this.addArcFallback(0, -12, 4, 20, 160, false, 0x7f3b28, 1).setStrokeStyle?.(1, 0x7f3b28);
+    const body = this.add.roundRectangle?.(0, 4, 24, 30, 8, shirtColor, 1)
+      ?? this.add.rectangle(0, 4, 24, 30, shirtColor, 1);
+    body?.setStrokeStyle?.(2, accentColor);
+    const leftArm = this.add.roundRectangle?.(-14, 5, 7, 20, 4, shirtColor, 1)
+      ?? this.add.rectangle(-14, 5, 7, 20, shirtColor, 1);
+    const rightArm = this.add.roundRectangle?.(14, 5, 7, 20, 4, shirtColor, 1)
+      ?? this.add.rectangle(14, 5, 7, 20, shirtColor, 1);
+    const apron = this.add.rectangle(0, 9, 14, 20, apronColor, 1).setStrokeStyle?.(1, 0x9ea8b5);
+    const bowTie = this.add.triangle(0, -2, -4, 0, 0, -3, 4, 0, accentColor, 1);
+    const tray = this.addEllipseFallback(14, 1, 15, 7, 0xcfd8e6, 1).setStrokeStyle?.(1, 0x6f7f93);
+    const plate = this.addCircleFallback(14, 1, 2.2, 0xf8fbff, 1).setStrokeStyle?.(1, 0xb7c5d8);
+    const shoeLeft = this.add.rectangle(-6, 22, 8, 5, 0x2a2a34, 1);
+    const shoeRight = this.add.rectangle(6, 22, 8, 5, 0x2a2a34, 1);
+
+    const avatar = this.addContainerFallback(x, y, [
+      leftArm,
+      rightArm,
+      body,
+      apron,
+      bowTie,
+      tray,
+      plate,
+      shoeLeft,
+      shoeRight,
+      hair,
+      head,
+      leftEye,
+      rightEye,
+      smile,
+    ]);
+    avatar.setSize?.(PLAYER_VISUAL_WIDTH, PLAYER_VISUAL_HEIGHT);
+    return avatar;
+  }
+
+  createCartoonChefAvatar(x, y) {
+    const hatTop = this.add.roundRectangle?.(0, -25, 24, 12, 5, 0xf7fbff, 1)
+      ?? this.add.rectangle(0, -25, 24, 12, 0xf7fbff, 1);
+    hatTop?.setStrokeStyle?.(1, 0xb7c5d8);
+    const hatBrim = this.add.rectangle(0, -19, 30, 5, 0xe7f0fb, 1).setStrokeStyle?.(1, 0xa6b7cf);
+    const head = this.addCircleFallback(0, -8, 10, 0xffd2a8, 1).setStrokeStyle?.(2, 0x5a2b1f);
+    const coat = this.add.roundRectangle?.(0, 12, 30, 34, 8, 0xf9fcff, 1)
+      ?? this.add.rectangle(0, 12, 30, 34, 0xf9fcff, 1);
+    coat?.setStrokeStyle?.(2, 0x4d6388);
+    const scarf = this.add.rectangle(0, 2, 12, 7, 0xca4f80, 1);
+    const buttonA = this.addCircleFallback(-4, 10, 1.5, 0x4d6388, 1);
+    const buttonB = this.addCircleFallback(4, 18, 1.5, 0x4d6388, 1);
+    const tray = this.addEllipseFallback(13, 10, 13, 6, 0xcfd8e6, 1).setStrokeStyle?.(1, 0x6f7f93);
+    const avatar = this.addContainerFallback(x, y, [coat, scarf, tray, hatTop, hatBrim, head, buttonA, buttonB]);
+    avatar.setSize?.(42, 58);
+    return avatar;
+  }
+
+  createHudPlateIcon(x, y) {
+    const ring = this.addCircleFallback(0, 0, 8, 0xf7fbff, 1).setStrokeStyle?.(2, 0x8aa0bf);
+    const center = this.addCircleFallback(0, 0, 4, 0xdde7f3, 1);
+    return this.addContainerFallback(x, y, [ring, center]);
+  }
+
+  createHudTimerIcon(x, y, accentColor) {
+    const dial = this.addCircleFallback(0, 0, 8, 0x183250, 1).setStrokeStyle?.(2, accentColor);
+    const needle = this.add.rectangle(1, -1, 2, 7, accentColor, 1);
+    return this.addContainerFallback(x, y, [dial, needle]);
+  }
+
+  createHudTargetIcon(x, y) {
+    const badge = this.add.roundRectangle?.(0, 0, 16, 16, 4, 0x173655, 1)
+      ?? this.add.rectangle(0, 0, 16, 16, 0x173655, 1);
+    badge?.setStrokeStyle?.(1, 0x9ec8f0);
+    const star = this.addStarFallback(0, 0, 5, 3, 6, 0x7fe38b, 1);
+    return this.addContainerFallback(x, y, [badge, star]);
+  }
+
+  createHudWarningIcon(x, y) {
+    return this.add
+      .triangle(x, y, -7, 7, 7, 7, 0, -7, 0xe45454, 1)
+      .setStrokeStyle?.(1, 0xffd3d3);
   }
 
   updatePlayerLocationHint() {
@@ -2503,30 +2623,29 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.playerLocationHintText.setText?.("P1");
-    this.playerLocationHintText.setPosition?.(this.player.x, this.player.y - 24);
+    this.playerLocationHintText.setPosition?.(this.player.x, this.player.y - 30);
   }
 
   getTableColliderBounds(variant) {
     return {
-      halfWidth: Math.ceil(variant.width / 2),
-      halfHeight: Math.ceil(variant.height / 2),
+      halfWidth: Math.ceil(variant.width / 2) + TABLE_COLLIDER_PADDING,
+      halfHeight: Math.ceil(variant.height / 2) + TABLE_COLLIDER_PADDING,
     };
   }
 
   createTableVisual(x, y, variant) {
-    if (this.textures?.exists?.(TABLE_ASSET_KEY)) {
-      const table = this.add.image(x, y, TABLE_ASSET_KEY).setDisplaySize(variant.width + 6, variant.height + 6);
-      table.setAlpha?.(0.96);
-      return table;
-    }
-
-    // Dark mahogany wood frame
-    this.add.rectangle(x, y, variant.width + 6, variant.height + 6, 0x3A1A08, 1);
-    // Cream tablecloth face
-    const table = this.add.rectangle(x, y, variant.width, variant.height, 0xF0E8D4, 1);
-    // Gold trim inset line
-    this.add.rectangle(x, y, variant.width - 6, variant.height - 6, 0xF0E8D4, 0)
-      .setStrokeStyle?.(1, 0xC8A030);
+    const frame = this.add.roundRectangle?.(0, 0, variant.width + 10, variant.height + 10, 8, 0x5f2a11, 1)
+      ?? this.add.rectangle(0, 0, variant.width + 10, variant.height + 10, 0x5f2a11, 1);
+    const cloth = this.add.roundRectangle?.(0, -1, variant.width, variant.height, 7, 0xf8f3e6, 1)
+      ?? this.add.rectangle(0, -1, variant.width, variant.height, 0xf8f3e6, 1);
+    cloth?.setStrokeStyle?.(2, 0xd5b46a);
+    const plateA = this.addCircleFallback(-variant.width * 0.22, 0, 6, 0xe7edf8, 1).setStrokeStyle?.(1, 0x8aa0bf);
+    const plateB = this.addCircleFallback(variant.width * 0.22, 0, 6, 0xe7edf8, 1).setStrokeStyle?.(1, 0x8aa0bf);
+    const vase = this.addEllipseFallback(0, 0, 8, 12, 0x82b66a, 1).setStrokeStyle?.(1, 0x4a6f3a);
+    const legLeft = this.add.rectangle(-variant.width * 0.28, variant.height * 0.52, 7, 10, 0x4f220c, 1);
+    const legRight = this.add.rectangle(variant.width * 0.28, variant.height * 0.52, 7, 10, 0x4f220c, 1);
+    const table = this.addContainerFallback(x, y, [legLeft, legRight, frame, cloth, plateA, plateB, vase]);
+    table.setSize?.(variant.width + 10, variant.height + 16);
     return table;
   }
 
@@ -2635,7 +2754,12 @@ export class GameScene extends Phaser.Scene {
     const tablePositions = this.getCurrentLayoutTablePositions();
 
     return tablePositions.map((zone, index) => {
-      const variant = TABLE_VARIANTS[index % TABLE_VARIANTS.length];
+      const baseVariant = TABLE_VARIANTS[index % TABLE_VARIANTS.length];
+      const variant = {
+        ...baseVariant,
+        width: Math.round(baseVariant.width * TABLE_SIZE_SCALE),
+        height: Math.round(baseVariant.height * TABLE_SIZE_SCALE),
+      };
       const safePosition = this.getSafeTablePosition(zone.x, zone.y, variant);
       const colliderBounds = this.getTableColliderBounds(variant);
       const visual = this.createTableVisual(safePosition.x, safePosition.y, variant);
@@ -2989,8 +3113,8 @@ export class GameScene extends Phaser.Scene {
 
           const label = `${table.label}${offset.number}`;
           // Seat: gold outer ring + burgundy velvet fill
-          this.add.circle(x, y, 14, 0xC8A030, 1);
-          const visual = this.add.circle(x, y, 12, 0x5A1428, 1);
+          this.addCircleFallback(x, y, SEAT_COLLIDER_RADIUS + 2, 0xC8A030, 1);
+          const visual = this.addCircleFallback(x, y, SEAT_COLLIDER_RADIUS, 0x5A1428, 1);
           const labelText = this.add
             .text(x, y, String(offset.number), {
               fontFamily: "Verdana, sans-serif",
@@ -3138,10 +3262,57 @@ export class GameScene extends Phaser.Scene {
     const announcedSeat = this.announcedTargetSeatLabel;
     if (!announcedSeat) {
       this.targetHudText.setText?.("--");
+      this.refreshHudLayout();
       return;
     }
 
     this.targetHudText.setText?.(this.formatTargetSeatHudValue(announcedSeat));
+    this.refreshHudLayout();
+  }
+
+  refreshHudLayout() {
+    const width = this.scale?.width ?? 1280;
+    const centerX = width / 2;
+    const hudColumnOffset = Math.max(230, Math.min(300, width * 0.23));
+    const leftColumnX = centerX - hudColumnOffset;
+    const rightColumnX = centerX + hudColumnOffset;
+    const hudPrimaryY = 18;
+    const hudSecondaryY = 52;
+    const hudPenaltyY = 42;
+    const hudWarningY = 72;
+    const scoreIconX = leftColumnX - 54;
+    const scoreValueX = scoreIconX + 26;
+    const timerIconX = centerX - 84;
+    const warningIconX = centerX + 84;
+    const targetIconX = rightColumnX - 56;
+
+    this.scoreHudIcon?.setPosition?.(scoreIconX, hudPrimaryY);
+    this.scoreText?.setPosition?.(scoreValueX, hudPrimaryY);
+    this.shiftLevelText?.setPosition?.(leftColumnX, hudSecondaryY);
+
+    this.timerHudIcon?.setPosition?.(timerIconX, hudPrimaryY);
+    this.timerText?.setPosition?.(centerX, hudPrimaryY);
+
+    this.warningHudIcon?.setPosition?.(warningIconX, hudPrimaryY);
+    this.rivalPenaltyHintText?.setPosition?.(centerX, hudPenaltyY);
+
+    this.targetHudIcon?.setPosition?.(targetIconX, hudPrimaryY);
+    this.goalHudText?.setPosition?.(rightColumnX, hudPrimaryY);
+    this.targetHudText?.setPosition?.(rightColumnX, hudSecondaryY);
+    this.hudTwistBadge?.setPosition?.(centerX + 170, hudWarningY);
+
+    const comboY = (this.arenaBounds?.minY ?? 72) + 28;
+    this.comboFlashText?.setPosition?.(centerX, comboY);
+
+    // Responsive font sizes keyed to canvas width.
+    this.scoreText?.setFontSize?.(clampPx(20, 14, 24, width));
+    this.timerText?.setFontSize?.(clampPx(20, 14, 24, width));
+    this.goalHudText?.setFontSize?.(clampPx(30, 20, 38, width));
+    this.targetHudText?.setFontSize?.(clampPx(15, 11, 18, width));
+    this.shiftLevelText?.setFontSize?.(clampPx(15, 11, 18, width));
+    this.rivalPenaltyHintText?.setFontSize?.(clampPx(24, 16, 30, width));
+    this.comboFlashText?.setFontSize?.(clampPx(24, 16, 30, width));
+    this.hudTwistBadge?.setFontSize?.(clampPx(12, 9, 14, width));
   }
 
   formatTargetSeatHudValue(seatLabel) {
@@ -3193,13 +3364,11 @@ export class GameScene extends Phaser.Scene {
         };
       const seed = laneSpawn ?? fallbackSpawn;
       usedSpawns.push(seed);
-      let visual;
-      if (this.textures?.exists(RIVAL_ASSET_KEY)) {
-        visual = this.add.image(seed.x, seed.y, RIVAL_ASSET_KEY).setDisplaySize(28, 42);
-      } else {
-        visual = this.add.circle(seed.x, seed.y, RIVAL_RADIUS, 0x8c1f66, 1);
-        visual.setStrokeStyle?.(2, 0x2ecde8);
-      }
+      const visual = this.createCartoonWaiterAvatar(seed.x, seed.y, {
+        shirtColor: 0xca4f80,
+        apronColor: 0xf6d9e7,
+        accentColor: 0x5f163a,
+      });
       const labelVisual = null;
 
       const rival = {
@@ -3308,6 +3477,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   drawPacmanMaze() {
+    if (!this.add?.graphics) {
+      return;
+    }
+
     const { minX, maxX, maxY } = this.arenaBounds;
     const minY = 0;
     const arenaWidth = maxX - minX;
@@ -3470,14 +3643,41 @@ export class GameScene extends Phaser.Scene {
   }
 
   pauseGame() {
+    if (this.isPaused) {
+      return;
+    }
     this.isPaused = true;
+    this.setGameplayFrozen(true);
     AudioManager.resume();
     this.showPauseOverlay();
   }
 
   resumeGame() {
+    if (!this.isPaused) {
+      return;
+    }
     this.isPaused = false;
+    this.setGameplayFrozen(false);
     this.hidePauseOverlay();
+  }
+
+  setGameplayFrozen(isFrozen) {
+    if (this.time) {
+      this.time.paused = Boolean(isFrozen);
+    }
+
+    if (isFrozen) {
+      this.tweens?.pauseAll?.();
+      if (this.physics?.world) {
+        this.physics.world.isPaused = true;
+      }
+      return;
+    }
+
+    this.tweens?.resumeAll?.();
+    if (this.physics?.world) {
+      this.physics.world.isPaused = false;
+    }
   }
 
   showPauseOverlay() {
@@ -3490,12 +3690,12 @@ export class GameScene extends Phaser.Scene {
     const bg = this.add?.rectangle(width / 2, height / 2, width, height, 0x0a0f1a, 0.78);
     bg?.setDepth?.(PAUSE_OVERLAY_DEPTH);
 
-    const card = this.add?.rectangle(width / 2, height / 2, 480, 300, 0x142238, 1);
+    const card = this.add?.rectangle(width / 2, height / 2, 480, 300, 0x0d0d10, 1);
     card?.setStrokeStyle?.(4, 0xf6c453);
     card?.setDepth?.(PAUSE_OVERLAY_DEPTH + 1);
 
     const titleText = this.add?.text(width / 2, height / 2 - 80, "PAUSED", {
-      fontFamily: "Courier New, monospace",
+      fontFamily: HUD_EMPHASIS_FONT_FAMILY,
       fontSize: "52px",
       color: "#f6c453",
       stroke: "#21070b",
@@ -3506,7 +3706,7 @@ export class GameScene extends Phaser.Scene {
 
     const hintsText = this.add?.text(width / 2, height / 2 + 10,
       "P / ESC  —  Resume\nR  —  Restart Shift\nM  —  Main Menu", {
-      fontFamily: "Courier New, monospace",
+      fontFamily: HUD_FONT_FAMILY,
       fontSize: "18px",
       color: "#b9c6dd",
       stroke: "#0d1728",
@@ -3551,6 +3751,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.pauseRestartKey && Phaser.Input.Keyboard.JustDown(this.pauseRestartKey)) {
+      this.setGameplayFrozen(false);
       this.hidePauseOverlay();
       this.scene.restart({
         shiftLevel: this.shiftLevel,
@@ -3562,6 +3763,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.pauseMainMenuKey && Phaser.Input.Keyboard.JustDown(this.pauseMainMenuKey)) {
+      this.setGameplayFrozen(false);
       this.hidePauseOverlay();
       this.scene.start(MENU_SCENE_KEY);
     }

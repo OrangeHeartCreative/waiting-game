@@ -1,9 +1,10 @@
 import Phaser from "phaser";
-import { COLORS } from "../ui/tokens";
 import { DAY_COMPLETE_SCENE_KEY, GAME_SCENE_KEY, MENU_SCENE_KEY } from "./sceneKeys";
 
 const SHIFT_NAMES = ["Breakfast", "Lunch", "Dinner"];
-const GOLD_ACCENT = 13148208;
+const DISPLAY_FONT = '"Bangers", "Trebuchet MS", sans-serif';
+const UI_FONT = '"Press Start 2P", "Trebuchet MS", sans-serif';
+const clampPx = (base, min, max, w) => `${Math.max(min, Math.min(max, Math.round(base * (w / 1280))))}px`;
 
 export class DayCompleteScene extends Phaser.Scene {
   constructor() {
@@ -26,68 +27,69 @@ export class DayCompleteScene extends Phaser.Scene {
   create() {
     const width = this.scale.width;
     const height = this.scale.height;
+    const cx = width / 2;
     const nextDay = this.shiftNumber + 1;
     const nextShiftName = SHIFT_NAMES[0];
+    this.cameras.main.setBackgroundColor(0x000000);
+    this.cameras.main.fadeIn?.(600, 0, 0, 0);
 
-    this.cameras.main.setBackgroundColor(COLORS.background);
-    this.add.rectangle(width / 2, height / 2, width, height, 0x0f2038, 1).setOrigin(0.5, 0.5);
-    this.add.rectangle(width / 2, height / 2, width * 0.96, height * 0.9, 0x132742, 1).setStrokeStyle(4, GOLD_ACCENT);
-    for (let y = 38; y < height - 38; y += 18) {
-      this.add.rectangle(width / 2, y, width * 0.92, 2, 0x1b3352, 0.45);
+    // CRT scanline overlay
+    const scanlines = this.add.graphics?.();
+    scanlines?.setDepth?.(10);
+    if (scanlines?.fillStyle && scanlines?.fillRect) {
+      for (let sy = 0; sy < height; sy += 4) {
+        scanlines.fillStyle(0x000000, 0.16);
+        scanlines.fillRect(0, sy, width, 2);
+      }
     }
 
-    const panelWidth = Math.min(width * 0.84, 980);
-    const panelHeight = Math.min(height * 0.66, 560);
-    const panelX = width / 2;
-    const panelY = height / 2;
-    const panelTop = panelY - panelHeight / 2;
-
-    this.add.rectangle(panelX + 6, panelY + 6, panelWidth, panelHeight, 0x050a13, 0.5);
-    this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x142238, 1).setStrokeStyle(4, GOLD_ACCENT);
-    this.add.rectangle(panelX, panelTop + 40, panelWidth - 10, 72, 0x2a0b10, 1).setStrokeStyle(2, GOLD_ACCENT);
-
-    this.add.rectangle(panelX - panelWidth / 2 + 34, panelTop + 40, 42, 42, 0x4c1120, 0.95).setStrokeStyle(2, GOLD_ACCENT);
-    this.add.rectangle(panelX + panelWidth / 2 - 34, panelTop + 40, 42, 42, 0x4c1120, 0.95).setStrokeStyle(2, GOLD_ACCENT);
+    // Edge vignette
+    this.add.rectangle(0, height / 2, width * 0.18, height, 0x000000, 0.5).setOrigin(0, 0.5).setDepth?.(9);
+    this.add.rectangle(width, height / 2, width * 0.18, height, 0x000000, 0.5).setOrigin(1, 0.5).setDepth?.(9);
 
     this.add
-      .text(panelX, panelTop + 40, `DAY ${this.shiftNumber} COMPLETE`, {
-        fontFamily: "Courier New, monospace",
-        fontSize: "48px",
+      .text(cx, height * 0.12, `DAY ${this.shiftNumber} COMPLETE`, {
+        fontFamily: DISPLAY_FONT,
+        fontSize: clampPx(72, 44, 88, width),
         color: "#f6c453",
         stroke: "#21070b",
-        strokeThickness: 6,
+        strokeThickness: 10,
       })
       .setOrigin(0.5);
 
     this.add
-      .text(panelX, panelTop + 122, `NEXT: DAY ${nextDay}  —  ${nextShiftName}`, {
-        fontFamily: "Courier New, monospace",
-        fontSize: "21px",
+      .text(cx, height * 0.24, `NEXT: DAY ${nextDay}  \u2014  ${nextShiftName.toUpperCase()}`, {
+        fontFamily: UI_FONT,
+        fontSize: clampPx(16, 11, 20, width),
         color: "#b9c6dd",
         stroke: "#0d1728",
         strokeThickness: 3,
       })
       .setOrigin(0.5);
 
+    this.add.rectangle(cx, height * 0.31, Math.min(width * 0.5, 600), 2, 0xf6c453, 0.4).setOrigin(0.5);
+
+    const hasCombo = this.bestCombo >= 3;
+
+    // Stats card background
     this.add
-      .rectangle(panelX, panelTop + 230, panelWidth - 120, 72, 0x1a3152, 1)
-      .setStrokeStyle(2, 0x93b8ff);
+      .rectangle(cx, height * (hasCombo ? 0.565 : 0.535), Math.min(width * 0.68, 800), hasCombo ? 240 : 195, 0x080e1a, 1)
+      .setStrokeStyle(1, 0x1e3352);
 
     this.add
-      .text(panelX, panelTop + 230, `SCORE: ${this.totalScore}`, {
-        fontFamily: "Courier New, monospace",
-        fontSize: "32px",
+      .text(cx, height * 0.38, `SCORE  ${this.totalScore}`, {
+        fontFamily: UI_FONT,
+        fontSize: clampPx(22, 14, 27, width),
         color: "#f1f5ff",
         stroke: "#0d1a30",
         strokeThickness: 4,
       })
       .setOrigin(0.5);
 
-    this.add.rectangle(panelX, panelTop + 302, panelWidth - 200, 54, 0x1a2a45, 1).setStrokeStyle(2, 0x4f6994);
     this.add
-      .text(panelX, panelTop + 302, `PLATES SERVED: ${this.totalDelivered}`, {
-        fontFamily: "Courier New, monospace",
-        fontSize: "23px",
+      .text(cx, height * 0.47, `PLATES  ${this.totalDelivered}`, {
+        fontFamily: UI_FONT,
+        fontSize: clampPx(15, 11, 19, width),
         color: "#b9c6dd",
         stroke: "#111d33",
         strokeThickness: 3,
@@ -95,32 +97,48 @@ export class DayCompleteScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const grade = this.getPerformanceGrade(this.totalScore, this.shiftNumber);
-    const comboLine = this.bestCombo >= 3 ? `  BEST COMBO ×${this.bestCombo}` : "";
+    const gradeColors = { S: "#ffe08a", A: "#88e888", B: "#60c8f0", C: "#c0c0c0" };
+    const gradeColor = gradeColors[grade] ?? "#c0c0c0";
     this.add
-      .text(panelX, panelTop + 360, `GRADE: ${grade}${comboLine}`, {
-        fontFamily: "Courier New, monospace",
-        fontSize: "18px",
-        color: grade === "S" ? "#ffe08a" : "#7fa0d0",
+      .text(cx, height * 0.57, grade, {
+        fontFamily: DISPLAY_FONT,
+        fontSize: clampPx(52, 32, 64, width),
+        color: gradeColor,
         stroke: "#0d1728",
+        strokeThickness: 8,
+      })
+      .setOrigin(0.5);
+
+    if (hasCombo) {
+      this.add
+        .text(cx, height * 0.66, `BEST COMBO  \u00d7${this.bestCombo}`, {
+          fontFamily: UI_FONT,
+          fontSize: clampPx(13, 9, 16, width),
+          color: "#ffe08a",
+          stroke: "#0d1728",
+          strokeThickness: 2,
+        })
+        .setOrigin(0.5);
+    }
+
+    const btnYFrac = hasCombo ? 0.78 : 0.74;
+    this.add.rectangle(cx, height * (btnYFrac - 0.04), Math.min(width * 0.4, 480), 2, 0xf6c453, 0.3).setOrigin(0.5);
+
+    this.add.rectangle(cx, height * btnYFrac, Math.min(width * 0.7, 820), 58, 0x2a0b10, 1).setStrokeStyle(3, 0xf6c453);
+    this.add
+      .text(cx, height * btnYFrac, "START NEXT SHIFT", {
+        fontFamily: UI_FONT,
+        fontSize: clampPx(18, 12, 22, width),
+        color: "#f6c453",
+        stroke: "#21070b",
         strokeThickness: 3,
       })
       .setOrigin(0.5);
 
-    this.add.rectangle(panelX, panelTop + 406, panelWidth - 220, 56, 0x341019, 1).setStrokeStyle(3, GOLD_ACCENT);
     this.add
-      .text(panelX, panelTop + 404, "START NEXT SHIFT", {
-        fontFamily: "Courier New, monospace",
-        fontSize: "30px",
-        color: "#f6c453",
-        stroke: "#21070b",
-        strokeThickness: 4,
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(panelX, panelTop + 468, "ENTER / SPACE: CONTINUE   ·   ESC: MAIN MENU", {
-        fontFamily: "Courier New, monospace",
-        fontSize: "14px",
+      .text(cx, height * (btnYFrac + 0.115), "ENTER / SPACE: CONTINUE   \u00b7   ESC: MAIN MENU", {
+        fontFamily: UI_FONT,
+        fontSize: clampPx(11, 9, 13, width),
         color: "#6a7897",
         stroke: "#0d1728",
         strokeThickness: 2,

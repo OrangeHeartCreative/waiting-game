@@ -12,7 +12,7 @@ HTML5 game built with Phaser 3 and Vite.
 
 ## Current Scope
 
-This repository currently provides a playable v1.0.1 release on top of the Week 1 scaffold:
+This repository currently provides a playable v1.1.0 final release on top of the Week 1 scaffold:
 - Scene lifecycle (`Boot -> Preload -> Menu -> Game -> ShiftComplete / DayComplete`)
 - Playable waiter loop in `GameScene`:
 	- Move with `WASD`/arrow keys
@@ -38,10 +38,13 @@ This repository currently provides a playable v1.0.1 release on top of the Week 
 	- Rival/player contact now applies a small rival bounceback nudge to reduce sticky body overlap
 - Presentation and UI pass:
 	- Main menu, in-game HUD, and completion scenes use a stronger arcade/SNES-inspired visual treatment
+	- Main menu title uses a custom comic-style procedural logo treatment
 	- Gameplay HUD now uses cohesive iconography for score, timer, target, and warning states
 	- Completion scenes use framed card layouts and keyboard-forward continue prompts
-	- End-of-shift/day summary shows performance grade (S/A/B/C) and best combo streak
+	- Shift complete summary now highlights centered `SCORE` and `PLATES` stats for quick readability
+	- Day complete summary continues to show performance grade (S/A/B/C)
 	- Pause overlay (P key) with resume / restart shift / main menu options
+	- Gameplay progression freezes while paused (timers, physics, and tween updates halt until resume)
 	- HUD remains black-backed in gameplay for maximum readability and layering clarity
 	- Menu includes Settings overlay (volume controls) and a graphical How to Play overlay (icon cards)
 	- Micro-feedback polish added: delivery/pickup pulses, timer warning pulse, and rival-hit flash/shake cues
@@ -71,6 +74,7 @@ This repository currently provides a playable v1.0.1 release on top of the Week 
 		- Chain 5+ deliveries → **×2.0 multiplier**
 		- Blue Plate and combo multipliers stack multiplicatively
 		- Rival contact immediately resets the combo counter
+		- Delivery now triggers on direct touch contact with the active highlighted seat location
 	- Queue-linked activation:
 	- Internal queue progression drives the currently active seat target
 	- Queue generation is constrained to selected queue tables for each run
@@ -120,9 +124,9 @@ Build and package a browser-ready ZIP for itch.io from local source:
 
 1. `npm run build`
 2. `mkdir -p release`
-3. `cd dist && zip -r ../release/dumb-waiters-v1.0.1-itch.zip .`
+3. `cd dist && zip -r ../release/dumb-waiters-v1.1.0-itch.zip .`
 
-The generated archive path is `release/dumb-waiters-v1.0.1-itch.zip`.
+The generated archive path is `release/dumb-waiters-v1.1.0-itch.zip`.
 
 ## Itch.io Screenshot Pack
 
@@ -185,12 +189,12 @@ Current local validation gate is passing:
 
 ## Milestone
 
-v1.0.1 success criteria — all passing:
+v1.1.0 success criteria — all passing:
 1. App boots and scene flow is stable.
 2. Placeholder menu and HUD render correctly.
 3. Combo chain, day twists, pause, settings, and how-to-play functional.
 4. Procedural SFX fires on key game events; menu melody loop and gameplay bassline loop are active.
-5. Performance grade (S/A/B/C) shown on shift/day complete screens.
+5. Shift complete screen shows centered score/plates summaries and day complete screen retains performance grading.
 6. `lint`, `test`, and `build` all pass.
 
 ## Asset Licensing
